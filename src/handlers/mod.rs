@@ -1,0 +1,15 @@
+pub mod auth;
+pub mod bangumi;
+pub mod dashboard;
+pub mod friend;
+pub mod gallery;
+pub mod health;
+pub mod legal;
+pub mod like;
+pub mod link;
+pub mod post;
+pub mod proxy;
+pub mod search;
+pub mod settings;
+pub mod status;
+pub mod trash;

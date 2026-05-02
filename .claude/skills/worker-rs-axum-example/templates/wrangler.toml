@@ -1,0 +1,22 @@
+# wrangler.toml - Cloudflare Workers Configuration
+
+name = "project-name"
+main = "build/index.js"
+compatibility_date = "2026-01-01"
+
+[build]
+command = "worker-build --release"
+
+[dev]
+port = 8787
+ip = "127.0.0.1"
+
+# D1 Database binding
+[[d1_databases]]
+binding = "db"
+database_name = "project-db"
+database_id = "your-database-id-here"
+
+# Environment variables
+[vars]
+JWT_SECRET = "your-jwt-secret-change-in-production"

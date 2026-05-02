@@ -1,0 +1,10 @@
+pub mod admin;
+pub mod bangumi;
+pub mod friend;
+pub mod gallery;
+pub mod legal;
+pub mod like;
+pub mod link;
+pub mod post;
+pub mod search;
+pub mod settings;

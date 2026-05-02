@@ -1,0 +1,14 @@
+{
+    "permissions": {
+        "allow": [
+            "Bash(rtk *)",
+            "Write(*)",
+            "Edit(*)",
+            "Read(*)",
+            "Glob(*)",
+            "Grep(*)",
+            "WebFetch(*)",
+            "WebSearch(*)"
+        ]
+    }
+}

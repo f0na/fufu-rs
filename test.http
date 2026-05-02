@@ -1,0 +1,572 @@
+### ═══════════════════════════════════════════════════════════
+### fufu-rs API 测试
+### 使用 VSCode REST Client 插件 (humao.rest-client)
+### 先启动服务: wrangler dev --port 8787
+### ═══════════════════════════════════════════════════════════
+
+@baseUrl = http://localhost:8787
+@accessToken = {{login.response.body.access_token}}
+@slug = test-post
+@postId = test-post
+@friendId = 00000000-0000-0000-0000-000000000000
+@galleryId = 00000000-0000-0000-0000-000000000000
+@photoId = 00000000-0000-0000-0000-000000000000
+
+### ───────────────────────────────────────────────────────────
+### 1. 健康检查
+### ─────────────────────────────────────────────────────────
+
+### GET /api/health
+GET {{baseUrl}}/api/health
+
+### ───────────────────────────────────────────────────────────
+### 2. 身份验证
+### ─────────────────────────────────────────────────────────
+
+### POST /api/auth/login
+# @name login
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+    "email": "admin@example.com",
+    "password": "your-password"
+}
+
+### POST /api/auth/login/2fa (如果需要 TOTP)
+POST {{baseUrl}}/api/auth/login/2fa
+Content-Type: application/json
+
+{
+    "temp_token": "{{login.response.body.temp_token}}",
+    "code": "123456"
+}
+
+### POST /api/auth/login/verify (如果使用邮箱验证码)
+POST {{baseUrl}}/api/auth/login/verify
+Content-Type: application/json
+
+{
+    "temp_token": "{{login.response.body.temp_token}}",
+    "code": "123456"
+}
+
+### POST /api/auth/refresh
+POST {{baseUrl}}/api/auth/refresh
+Content-Type: application/json
+
+{
+    "refresh_token": "your-refresh-token"
+}
+
+### GET /api/auth/me
+GET {{baseUrl}}/api/auth/me
+Authorization: Bearer {{accessToken}}
+
+### POST /api/auth/logout
+POST {{baseUrl}}/api/auth/logout
+Authorization: Bearer {{accessToken}}
+
+### POST /api/auth/2fa/setup (需登录)
+POST {{baseUrl}}/api/auth/2fa/setup
+Authorization: Bearer {{accessToken}}
+
+### POST /api/auth/2fa/verify (确认开启 2FA)
+POST {{baseUrl}}/api/auth/2fa/verify
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+    "code": "123456"
+}
+
+### POST /api/auth/2fa/disable (关闭 2FA)
+POST {{baseUrl}}/api/auth/2fa/disable
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+    "password": "your-password"
+}
+
+### ───────────────────────────────────────────────────────────
+### 3. 站点设置
+### ─────────────────────────────────────────────────────────
+
+### GET /api/settings/profile
+GET {{baseUrl}}/api/settings/profile
+
+### PUT /api/settings/profile (需登录)
+PUT {{baseUrl}}/api/settings/profile
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+    "site_name": "我的博客",
+    "description": "个人技术博客",
+    "avatar_url": "https://example.com/avatar.png",
+    "email": "admin@example.com"
+}
+
+### GET /api/settings/footer
+GET {{baseUrl}}/api/settings/footer
+
+### PUT /api/settings/footer (需登录)
+PUT {{baseUrl}}/api/settings/footer
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+    "copyright": "© 2026 My Blog",
+    "icp": "京ICP备00000000号"
+}
+
+### GET /api/settings/footer-links
+GET {{baseUrl}}/api/settings/footer-links
+
+### POST /api/settings/footer-links (需登录)
+POST {{baseUrl}}/api/settings/footer-links
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+    "name": "关于我们",
+    "url": "/about",
+    "sort_order": 1
+}
+
+### PUT /api/settings/footer-links/{id} (需登录)
+PUT {{baseUrl}}/api/settings/footer-links/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+    "name": "关于我们（更新）",
+    "sort_order": 2
+}
+
+### DELETE /api/settings/footer-links/{id} (需登录)
+DELETE {{baseUrl}}/api/settings/footer-links/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{accessToken}}
+
+### GET /api/settings/social-links
+GET {{baseUrl}}/api/settings/social-links
+
+### POST /api/settings/social-links (需登录)
+POST {{baseUrl}}/api/settings/social-links
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+    "name": "GitHub",
+    "url": "https://github.com/username",
+    "icon": "github",
+    "sort_order": 1
+}
+
+### PUT /api/settings/social-links/{id} (需登录)
+PUT {{baseUrl}}/api/settings/social-links/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+    "name": "GitHub（更新）"
+}
+
+### DELETE /api/settings/social-links/{id} (需登录)
+DELETE {{baseUrl}}/api/settings/social-links/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{accessToken}}
+
+### GET /api/settings/announcements
+GET {{baseUrl}}/api/settings/announcements
+
+### POST /api/settings/announcements (需登录)
+POST {{baseUrl}}/api/settings/announcements
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+    "content": "站点维护通知",
+    "sort_order": 1
+}
+
+### PUT /api/settings/announcements/{id} (需登录)
+PUT {{baseUrl}}/api/settings/announcements/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+    "content": "站点维护通知（更新）"
+}
+
+### DELETE /api/settings/announcements/{id} (需登录)
+DELETE {{baseUrl}}/api/settings/announcements/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{accessToken}}
+
+### ───────────────────────────────────────────────────────────
+### 4. 博客模块
+### ─────────────────────────────────────────────────────────
+
+### GET /api/posts
+GET {{baseUrl}}/api/posts?page=1&page_size=10
+
+### GET /api/posts?tag=rust
+GET {{baseUrl}}/api/posts?tag=rust
+
+### POST /api/posts (需登录)
+POST {{baseUrl}}/api/posts
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+    "title": "测试文章",
+    "slug": "test-post",
+    "content": "# 测试\n\n这是一篇测试文章",
+    "excerpt": "测试文章摘要",
+    "tags": ["rust", "web"],
+    "status": "published"
+}
+
+### GET /api/posts/{slug}
+GET {{baseUrl}}/api/posts/test-post
+
+### PUT /api/posts/{slug} (需登录)
+PUT {{baseUrl}}/api/posts/test-post
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+    "title": "测试文章（更新）",
+    "content": "# 更新\n\n内容已更新"
+}
+
+### POST /api/posts/{slug}/views
+POST {{baseUrl}}/api/posts/test-post/views
+
+### GET /api/posts/{slug}/comments-count
+GET {{baseUrl}}/api/posts/test-post/comments-count
+
+### DELETE /api/posts/{slug} (需登录)
+DELETE {{baseUrl}}/api/posts/test-post
+Authorization: Bearer {{accessToken}}
+
+### ───────────────────────────────────────────────────────────
+### 5. 点赞系统
+### ─────────────────────────────────────────────────────────
+
+### POST /api/likes/{type}/{id} — 点赞 toggle
+POST {{baseUrl}}/api/likes/post/test-post
+
+### GET /api/likes/{type}/{id} — 获取点赞数
+GET {{baseUrl}}/api/likes/post/test-post
+
+### ───────────────────────────────────────────────────────────
+### 6. 友人帐
+### ─────────────────────────────────────────────────────────
+
+### GET /api/friends
+GET {{baseUrl}}/api/friends?page=1&page_size=20
+
+### POST /api/friends (需登录 / 可公开提交)
+POST {{baseUrl}}/api/friends
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+    "name": "友链名称",
+    "url": "https://example.com",
+    "avatar_url": "https://example.com/avatar.png",
+    "description": "友链描述",
+    "email": "webmaster@example.com"
+}
+
+### GET /api/friends/{id}
+GET {{baseUrl}}/api/friends/{{friendId}}
+
+### PUT /api/friends/{id} (需登录)
+PUT {{baseUrl}}/api/friends/{{friendId}}
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+    "name": "友链名称（更新）",
+    "sort_order": 1
+}
+
+### PATCH /api/friends/{id}/status (需登录)
+PATCH {{baseUrl}}/api/friends/{{friendId}}/status
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+    "status": "approved"
+}
+
+### DELETE /api/friends/{id} (需登录)
+DELETE {{baseUrl}}/api/friends/{{friendId}}
+Authorization: Bearer {{accessToken}}
+
+### ───────────────────────────────────────────────────────────
+### 7. 链接收藏
+### ─────────────────────────────────────────────────────────
+
+### GET /api/links
+GET {{baseUrl}}/api/links?page=1&page_size=20
+
+### GET /api/links?tag=rust
+GET {{baseUrl}}/api/links?tag=rust
+
+### GET /api/links/meta
+GET {{baseUrl}}/api/links/meta
+
+### POST /api/links (需登录)
+POST {{baseUrl}}/api/links
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+    "title": "Rust 官方文档",
+    "url": "https://www.rust-lang.org/",
+    "description": "Rust 编程语言官方网站",
+    "tags": ["rust", "programming"],
+    "sort_order": 1
+}
+
+### GET /api/links/{id}
+GET {{baseUrl}}/api/links/00000000-0000-0000-0000-000000000000
+
+### PUT /api/links/{id} (需登录)
+PUT {{baseUrl}}/api/links/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+    "title": "Rust 官方文档（更新）",
+    "description": "更新后的描述",
+    "favorite": 1
+}
+
+### DELETE /api/links/{id} (需登录)
+DELETE {{baseUrl}}/api/links/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{accessToken}}
+
+### ───────────────────────────────────────────────────────────
+### 8. 相册
+### ─────────────────────────────────────────────────────────
+
+### GET /api/galleries
+GET {{baseUrl}}/api/galleries?page=1&page_size=20
+
+### GET /api/galleries?tag=travel
+GET {{baseUrl}}/api/galleries?tag=旅行
+
+### POST /api/galleries (需登录)
+POST {{baseUrl}}/api/galleries
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+    "title": "我的旅行相册",
+    "cover_path": "/images/travel/cover.jpg",
+    "tags": ["旅行", "摄影"]
+}
+
+### GET /api/galleries/{id}
+GET {{baseUrl}}/api/galleries/{{galleryId}}
+
+### PUT /api/galleries/{id} (需登录)
+PUT {{baseUrl}}/api/galleries/{{galleryId}}
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+    "title": "我的旅行相册（更新）"
+}
+
+### POST /api/galleries/{id}/photos (需登录)
+POST {{baseUrl}}/api/galleries/{{galleryId}}/photos
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+    "paths": ["/images/travel/photo1.jpg", "/images/travel/photo2.jpg"]
+}
+
+### DELETE /api/photos/{id} (需登录)
+DELETE {{baseUrl}}/api/photos/{{photoId}}
+Authorization: Bearer {{accessToken}}
+
+### DELETE /api/galleries/{id} (需登录)
+DELETE {{baseUrl}}/api/galleries/{{galleryId}}
+Authorization: Bearer {{accessToken}}
+
+### ───────────────────────────────────────────────────────────
+### 9. 法律文档
+### ─────────────────────────────────────────────────────────
+
+### GET /api/license
+GET {{baseUrl}}/api/license
+
+### GET /api/license/versions
+GET {{baseUrl}}/api/license/versions
+
+### POST /api/license (需登录)
+POST {{baseUrl}}/api/license
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+    "version": "v1.0",
+    "content": "## 许可证\n\n版权所有 © 2026"
+}
+
+### GET /api/privacy
+GET {{baseUrl}}/api/privacy
+
+### GET /api/privacy/versions
+GET {{baseUrl}}/api/privacy/versions
+
+### POST /api/privacy (需登录)
+POST {{baseUrl}}/api/privacy
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+    "version": "v1.0",
+    "date": "2026-01-01",
+    "content": "## 隐私政策\n\n我们重视您的隐私"
+}
+
+### ───────────────────────────────────────────────────────────
+### 10. 番剧记录
+### ─────────────────────────────────────────────────────────
+
+### GET /api/bangumi/records
+GET {{baseUrl}}/api/bangumi/records?page=1&page_size=20
+
+### GET /api/bangumi/records?status=watching
+GET {{baseUrl}}/api/bangumi/records?status=watching
+
+### POST /api/bangumi/records (需登录)
+POST {{baseUrl}}/api/bangumi/records
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+    "subject_id": 123,
+    "title": "测试番剧",
+    "status": "watching",
+    "progress": "6/12",
+    "cover_url": "https://example.com/cover.jpg",
+    "fansub": "字幕组名"
+}
+
+### PUT /api/bangumi/records/{id} (需登录)
+PUT {{baseUrl}}/api/bangumi/records/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+    "status": "watched",
+    "progress": "12/12"
+}
+
+### DELETE /api/bangumi/records/{id} (需登录)
+DELETE {{baseUrl}}/api/bangumi/records/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{accessToken}}
+
+### ───────────────────────────────────────────────────────────
+### 11. 外部 API 代理
+### ─────────────────────────────────────────────────────────
+
+### POST /api/bangumi/search
+POST {{baseUrl}}/api/bangumi/search
+Content-Type: application/json
+
+{
+    "keyword": "进击的巨人",
+    "type": 1
+}
+
+### GET /api/bangumi/subjects/{id}
+GET {{baseUrl}}/api/bangumi/subjects/1
+
+### GET /api/bangumi/calendar
+GET {{baseUrl}}/api/bangumi/calendar
+
+### GET /api/bangumi/browse?limit=5
+GET {{baseUrl}}/api/bangumi/browse?limit=5&type=1
+
+### GET /api/anime-garden/resources
+GET {{baseUrl}}/api/anime-garden/resources?page=1
+
+### ───────────────────────────────────────────────────────────
+### 12. 全站搜索
+### ─────────────────────────────────────────────────────────
+
+### GET /api/search — 正常搜索
+GET {{baseUrl}}/api/search?q=rust
+
+### GET /api/search — 分页搜索
+GET {{baseUrl}}/api/search?q=测试&page=1&page_size=5
+
+### GET /api/search — 过短关键词（应返回 400）
+GET {{baseUrl}}/api/search?q=a
+
+### GET /api/search — 缺少 q 参数（应返回 400）
+GET {{baseUrl}}/api/search
+
+### GET /api/search — 无匹配结果
+GET {{baseUrl}}/api/search?q=不存在的内容xz7k
+
+### ───────────────────────────────────────────────────────────
+### 12. 翻译
+### ─────────────────────────────────────────────────────────
+
+### POST /api/translate
+POST {{baseUrl}}/api/translate
+Content-Type: application/json
+
+{
+    "text": "你好世界"
+}
+
+### ───────────────────────────────────────────────────────────
+### 13. 垃圾桶
+### ─────────────────────────────────────────────────────────
+
+### GET /api/trash/posts (需登录)
+GET {{baseUrl}}/api/trash/posts
+Authorization: Bearer {{accessToken}}
+
+### GET /api/trash/friends (需登录)
+GET {{baseUrl}}/api/trash/friends
+Authorization: Bearer {{accessToken}}
+
+### GET /api/trash/links (需登录)
+GET {{baseUrl}}/api/trash/links
+Authorization: Bearer {{accessToken}}
+
+### GET /api/trash/galleries (需登录)
+GET {{baseUrl}}/api/trash/galleries
+Authorization: Bearer {{accessToken}}
+
+### GET /api/trash/bangumi (需登录)
+GET {{baseUrl}}/api/trash/bangumi
+Authorization: Bearer {{accessToken}}
+
+### DELETE /api/trash/posts/{id} — 真删除 (需登录)
+DELETE {{baseUrl}}/api/trash/posts/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{accessToken}}
+
+### POST /api/trash/posts/{id}/restore — 恢复 (需登录)
+POST {{baseUrl}}/api/trash/posts/00000000-0000-0000-0000-000000000000/restore
+Authorization: Bearer {{accessToken}}
+
+### ───────────────────────────────────────────────────────────
+### 14. 仪表盘
+### ─────────────────────────────────────────────────────────
+
+### GET /api/auth/dashboard (需登录 + CF_API_TOKEN/CF_ZONE_ID)
+GET {{baseUrl}}/api/auth/dashboard
+Authorization: Bearer {{accessToken}}

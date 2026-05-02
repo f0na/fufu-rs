@@ -1,0 +1,40 @@
+# Cargo.toml - Rust Dependencies
+
+[package]
+name = "project-name"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[profile.release]
+lto = true
+codegen-units = 1
+
+[dependencies]
+# Worker & Web APIs
+worker = { version = "0.7", features = ["axum", "http", "d1"] }
+worker-macros = { version = "0.7", features = ["http"] }
+wasm-bindgen-futures = "0.4"
+wasm-bindgen = "0.2"
+
+# Axum and Routing
+axum = { version = "0.8", default-features = false, features = ["json", "macros", "form"] }
+tower-http = { version = "0.6", features = ["cors"] }
+tower-service = "0.3"
+
+# Data & Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Crypto & Encoding (for authentication)
+jsonwebtoken = "9.3"
+hmac = "0.12"
+sha2 = "0.10"
+base64 = "0.22"
+
+# Utilities
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v7", "serde", "js"] }
+getrandom = { version = "0.2", features = ["js"] }
