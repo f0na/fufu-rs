@@ -53,20 +53,10 @@ CF_ZONE_ID=xxx
 # ─── CORS（跨域） ─────────────────────────────────────────────
 # 本地开发时无需设置（默认允许所有来源）
 # 生产环境用逗号分隔多个域名，如:
-# CORS_ORIGINS=https://fufu.moe,https://admin.fufu.moe
+# CORS_ORIGINS=https://fufu.moe,https://www.fufu.moe
 # CORS_ORIGINS=xxx
 
-# ─── 邮件服务（Mailchannels） ────────────────────────────────────
-# Cloudflare Workers 免费内置，无需 API Key
-# 使用前需要在域名 DNS 添加 TXT 记录:
-#   v=spf1 include:relay.mailchannels.net ~all
-# 发件域名必须和 worker 域名一致，或添加 DNS 记录授权
-# 详见: https://developers.cloudflare.com/pages/functions/mailchannels/
-MAIL_FROM=noreply@你的域名
-# MAIL_FROM_NAME=Fufu                              # 可选，发件人显示名称
-# MAIL_DISABLED=true   # 本地开发跳过邮件发送
-
-# ─── 预留（未使用） ──────────────────────────────────────────
+# ─── 预留 ──────────────────────────────────────────────────────
 # RESET_TOKEN_SECRET=xxx                    # 重置令牌密钥（暂未使用）
 # GITHUB_CLIENT_ID=xxx
 # GITHUB_CLIENT_SECRET=xxx

@@ -15,7 +15,6 @@ pub fn api_router(state: Arc<Env>) -> Router {
         .route("/api/auth/register", post(auth::register))
         .route("/api/auth/login", post(auth::login))
         .route("/api/auth/login/2fa", post(auth::login_2fa))
-        .route("/api/auth/login/verify", post(auth::login_verify))
         .route("/api/auth/2fa/setup", post(auth::setup_2fa))
         .route("/api/auth/2fa/verify", post(auth::verify_2fa))
         .route("/api/auth/2fa/disable", post(auth::disable_2fa))

@@ -13,7 +13,6 @@ pub enum AppError {
     Conflict(String),
     RateLimited,
     TotpInvalid,
-    EmailCodeInvalid,
     TempTokenExpired,
     Internal(String),
     ExternalApiFailure(String),
@@ -30,8 +29,7 @@ impl AppError {
             Self::Conflict(_) => 1005,
             Self::RateLimited => 1006,
             Self::TotpInvalid => 2001,
-            Self::EmailCodeInvalid => 2002,
-            Self::TempTokenExpired => 2003,
+            Self::TempTokenExpired => 2002,
             Self::ExternalApiFailure(_) => 5002,
         }
     }
@@ -43,7 +41,6 @@ impl AppError {
             Self::WrongCredentials
             | Self::TotpRequired
             | Self::TotpInvalid
-            | Self::EmailCodeInvalid
             | Self::TempTokenExpired => StatusCode::UNAUTHORIZED,
             Self::NotFound(_) => StatusCode::NOT_FOUND,
             Self::Conflict(_) => StatusCode::CONFLICT,
@@ -62,7 +59,6 @@ impl AppError {
             Self::Conflict(msg) => msg.clone(),
             Self::RateLimited => "请求频率超限".into(),
             Self::TotpInvalid => "TOTP 验证码错误".into(),
-            Self::EmailCodeInvalid => "邮箱验证码错误或已过期".into(),
             Self::TempTokenExpired => "临时令牌已过期".into(),
             Self::Internal(msg) => msg.clone(),
             Self::ExternalApiFailure(msg) => msg.clone(),

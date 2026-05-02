@@ -19,21 +19,9 @@ pub struct LoginRequest {
     password: String,
 }
 
-#[derive(Serialize)]
-pub struct LoginResponse {
-    temp_token: String,
-    require_2fa: bool,
-    require_email_verify: bool,
-}
 
 #[derive(Deserialize)]
 pub struct Login2faRequest {
-    temp_token: String,
-    code: String,
-}
-
-#[derive(Deserialize)]
-pub struct LoginVerifyRequest {
     temp_token: String,
     code: String,
 }
@@ -141,89 +129,6 @@ async fn record_login_log(
     }
 }
 
-/// 生成 6 位邮箱验证码
-fn generate_email_code() -> String {
-    let mut buf = [0u8; 4];
-    getrandom::getrandom(&mut buf).ok();
-    let num = u32::from_ne_bytes(buf) % 1_000_000;
-    format!("{:06}", num)
-}
-
-/// 存储验证码到 D1
-async fn save_verification_code(env: &Arc<Env>, admin_id: &str, code: &str) -> AppResult<()> {
-    let db = get_db(env, Db::Auth)?;
-    let id = uuid::Uuid::now_v7().to_string();
-    let now = time::now_str();
-    let expires = time::now_str_add(chrono::Duration::minutes(10));
-    db.prepare(
-        "INSERT INTO verification_codes (id, admin_id, code, type, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-    )
-    .bind(&[
-        id.into(),
-        admin_id.into(),
-        code.into(),
-        "email_verification".into(),
-        expires.into(),
-        now.into(),
-    ])
-    .map_err(|e| AppError::Internal(format!("验证码存储失败: {}", e)))?
-    .run()
-    .await?;
-    Ok(())
-}
-
-/// 发送验证码邮件（通过 Mailchannels，Cloudflare Workers 免费内建）
-/// 使用前需在域名 DNS 添加 SPF 记录，详见:
-/// https://developers.cloudflare.com/pages/functions/mailchannels/
-async fn send_email_code(env: &Arc<Env>, email: &str, code: &str) -> AppResult<()> {
-    if env.var("MAIL_DISABLED").is_ok() {
-        console_log!("[本地开发] 验证码 {} -> {} (跳过邮件发送)", code, email);
-        return Ok(());
-    }
-
-    let mail_from = env
-        .var("MAIL_FROM")
-        .map_err(|_| AppError::Internal("MAIL_FROM 未配置".into()))?
-        .to_string();
-    let mail_from_name = env
-        .var("MAIL_FROM_NAME")
-        .ok()
-        .map(|v| v.to_string())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "Fufu".into());
-
-    let body = serde_json::json!({
-        "personalizations": [{
-            "to": [{"email": email}]
-        }],
-        "from": {"email": mail_from, "name": mail_from_name},
-        "subject": "【Fufu】登录验证码",
-        "content": [{
-            "type": "text/plain",
-            "value": format!(
-                "您的登录验证码为：{}\n\n该验证码有效期为 10 分钟，请勿泄露给他人。\n\n如果不是您本人操作，请忽略此邮件。",
-                code
-            )
-        }]
-    });
-
-    let client = reqwest::Client::new();
-    let resp = client
-        .post("https://api.mailchannels.net/tx/v1/send")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| AppError::Internal(format!("发送邮件失败: {}", e)))?;
-
-    if !resp.status().is_success() {
-        let text = resp.text().await.unwrap_or_default();
-        console_log!("Mailchannels error: {}", text);
-        return Err(AppError::Internal("发送邮件失败".into()));
-    }
-
-    console_log!("验证码已发送到 {}: {}", email, code);
-    Ok(())
-}
 
 // ─── Handlers ────────────────────────────────────────────────
 
@@ -303,12 +208,12 @@ pub async fn register(
     }))
 }
 
-/// POST /api/auth/login — 第一步：验证邮箱密码
+/// POST /api/auth/login — 验证邮箱密码
 #[worker::send]
 pub async fn login(
     State(env): State<Arc<Env>>,
     Json(body): Json<LoginRequest>,
-) -> AppResult<Json<LoginResponse>> {
+) -> AppResult<Json<serde_json::Value>> {
     let admin = find_admin_by_email(&env, &body.email)
         .await?
         .ok_or_else(|| {
@@ -327,24 +232,15 @@ pub async fn login(
         // 需要 TOTP 第二步
         let temp_token = jwt::generate_temp_token(&admin.id, "2fa", &secret)?;
         record_login_log(&env, &admin.id, None, None, "totp_required").await;
-        Ok(Json(LoginResponse {
-            temp_token,
-            require_2fa: true,
-            require_email_verify: false,
-        }))
+        Ok(Json(serde_json::json!({
+            "temp_token": temp_token,
+            "require_2fa": true,
+        })))
     } else {
-        // 需要邮箱验证码第二步
-        let code = generate_email_code();
-        save_verification_code(&env, &admin.id, &code).await?;
-        send_email_code(&env, &admin.email, &code).await?;
-
-        let temp_token = jwt::generate_temp_token(&admin.id, "verify_email", &secret)?;
-        record_login_log(&env, &admin.id, None, None, "totp_required").await;
-        Ok(Json(LoginResponse {
-            temp_token,
-            require_2fa: false,
-            require_email_verify: true,
-        }))
+        // 直接签发 token pair
+        let tokens = jwt::generate_token_pair(&admin.id, &admin.username, &secret)?;
+        record_login_log(&env, &admin.id, None, None, "success").await;
+        Ok(Json(serde_json::json!(tokens)))
     }
 }
 
@@ -373,59 +269,6 @@ pub async fn login_2fa(
     if !totp::verify_totp(totp_secret, &body.code)? {
         return Err(AppError::TotpInvalid);
     }
-
-    let tokens = jwt::generate_token_pair(&admin.id, &admin.username, &secret)?;
-    record_login_log(&env, &admin.id, None, None, "success").await;
-    Ok(Json(tokens))
-}
-
-/// POST /api/auth/login/verify — 第二步：邮箱验证码验证
-#[worker::send]
-pub async fn login_verify(
-    State(env): State<Arc<Env>>,
-    Json(body): Json<LoginVerifyRequest>,
-) -> AppResult<Json<jwt::TokenPair>> {
-    let secret = get_secret(&env)?;
-    let temp_claims = jwt::verify_temp_token(&body.temp_token, &secret)?;
-
-    if temp_claims.purpose.as_deref() != Some("verify_email") {
-        return Err(AppError::TempTokenExpired);
-    }
-
-    let admin = find_admin_by_id(&env, &temp_claims.sub)
-        .await?
-        .ok_or(AppError::WrongCredentials)?;
-
-    // 验证邮箱验证码
-    let db = get_db(&env, Db::Auth)?;
-    let now = time::now_str();
-    let result = db
-        .prepare(
-            "SELECT id FROM verification_codes \
-             WHERE admin_id = ? AND code = ? AND type = 'email_verification' \
-             AND expires_at > ? AND used_at IS NULL \
-             ORDER BY created_at DESC LIMIT 1",
-        )
-        .bind(&[admin.id.clone().into(), body.code.into(), now.into()])
-        .map_err(|e| AppError::Internal(format!("查询验证码失败: {}", e)))?
-        .all()
-        .await?;
-
-    let rows: Vec<serde_json::Value> = result.results()?;
-    let code_id = rows
-        .first()
-        .and_then(|r| r.get("id"))
-        .and_then(|v| v.as_str())
-        .map(String::from)
-        .ok_or(AppError::EmailCodeInvalid)?;
-
-    // 标记验证码已使用
-    let used_at = time::now_str();
-    db.prepare("UPDATE verification_codes SET used_at = ? WHERE id = ?")
-        .bind(&[used_at.into(), code_id.into()])
-        .map_err(|e| AppError::Internal(format!("更新验证码状态失败: {}", e)))?
-        .run()
-        .await?;
 
     let tokens = jwt::generate_token_pair(&admin.id, &admin.username, &secret)?;
     record_login_log(&env, &admin.id, None, None, "success").await;
