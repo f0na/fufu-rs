@@ -11,5 +11,4 @@ pub mod post;
 pub mod proxy;
 pub mod search;
 pub mod settings;
-pub mod status;
 pub mod trash;

@@ -5,12 +5,11 @@ use axum::{
 use std::sync::Arc;
 use worker::Env;
 
-use crate::handlers::{auth, bangumi, dashboard, friend, gallery, health, legal, like, link, post, proxy, search, settings, status, trash};
+use crate::handlers::{auth, bangumi, dashboard, friend, gallery, health, legal, like, link, post, proxy, search, settings, trash};
 
 pub fn api_router(state: Arc<Env>) -> Router {
     Router::new()
         .route("/api/health", get(health::health_check))
-        .route("/api/status", get(status::site_status))
         // 身份验证
         .route("/api/auth/register", post(auth::register))
         .route("/api/auth/login", post(auth::login))

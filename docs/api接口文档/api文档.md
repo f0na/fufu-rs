@@ -9,7 +9,7 @@
 ## 目录
 
 1. [通用说明](#通用说明)
-2. [健康检查 & 状态](#1-健康检查--状态)
+2. [健康检查](#1-健康检查)
 3. [身份验证](#2-身份验证)
 4. [站点设置](#3-站点设置)
 5. [博客文章](#4-博客文章)
@@ -98,7 +98,7 @@
 
 ---
 
-## 1. 健康检查 & 状态
+## 1. 健康检查
 
 ### GET /api/health
 
@@ -117,39 +117,6 @@
     "kv": { "status": "ok", "latency_ms": 5 },
     "bangumi_api": { "status": "skipped" },
     "anime_garden_api": { "status": "skipped" }
-  }
-}
-```
-
-### GET /api/status
-
-站点公开状态信息（含各模块数据统计）。
-
-**认证**: 不需要
-
-**响应**:
-
-```json
-{
-  "api": {
-    "status": "ok",
-    "uptime": 12345,
-    "version": "0.1.0",
-    "d1": { "status": "ok", "latency_ms": 10 },
-    "kv": { "status": "ok", "latency_ms": 3 }
-  },
-  "site": {
-    "site_name": "我的博客",
-    "subtitle": "子标题",
-    "description": "站点描述",
-    "logo_url": "https://example.com/logo.png"
-  },
-  "stats": {
-    "posts": 10,
-    "friends": 5,
-    "links": 20,
-    "galleries": 3,
-    "bangumi_records": 15
   }
 }
 ```
@@ -1714,7 +1681,6 @@
     "status": "ok",
     "uptime": 12345,
     "version": "0.1.0",
-    "d1": { "status": "ok", "latency_ms": null },
     "kv": { "status": "ok", "latency_ms": 5 }
   },
   "stats": {
@@ -1723,9 +1689,45 @@
     "links": 20,
     "galleries": 3,
     "bangumi_records": 15
-  }
+  },
+  "deploy_info": {
+    "deployed_at": "2026-05-01 14:30:00",
+    "deployed_at_epoch": 1746095400,
+    "uptime_seconds": 172800,
+    "uptime_human": "2天0小时0分0秒"
+  },
+  "external_apis": [
+    { "name": "Bangumi", "status": "ok", "latency_ms": 120 },
+    { "name": "Anime Garden", "status": "ok", "latency_ms": 80 },
+    { "name": "Baidu Translate", "status": "error", "latency_ms": null }
+  ],
+  "worker_metrics": {
+    "total_requests": 100000,
+    "error_count": 500,
+    "error_rate_pct": 0.5,
+    "avg_cpu_time_ms": 45.23,
+    "errors_by_path": [
+      { "path": "/api/auth/login", "status_code": 401, "count": 200 },
+      { "path": "/api/posts/not-found", "status_code": 404, "count": 150 }
+    ]
+  },
+  "databases": [
+    { "name": "Core", "binding": "FUFU_CORE", "status": "ok", "latency_ms": 5 },
+    { "name": "Posts", "binding": "FUFU_POSTS", "status": "ok", "latency_ms": 3 },
+    { "name": "Media", "binding": "FUFU_MEDIA", "status": "ok", "latency_ms": 4 },
+    { "name": "Bangumi", "binding": "FUFU_BANGUMI", "status": "ok", "latency_ms": 3 },
+    { "name": "Social", "binding": "FUFU_SOCIAL", "status": "ok", "latency_ms": 4 },
+    { "name": "Likes", "binding": "FUFU_LIKES", "status": "ok", "latency_ms": 3 },
+    { "name": "Legal", "binding": "FUFU_LEGAL", "status": "ok", "latency_ms": 5 },
+    { "name": "Auth", "binding": "FUFU_AUTH", "status": "ok", "latency_ms": 3 }
+  ]
 }
 ```
+
+> `health` 字段中的 `kv` 检测 KV 连通性，D1 检测移至 `databases` 字段覆盖全部 8 个数据库。
+> `external_apis` 并行检测 Bangumi、Anime Garden、百度翻译三个外部 API 的连通性。
+> `worker_metrics` 中的 `errors_by_path` 来自 Cloudflare GraphQL Analytics，非 2xx 响应按路径和状态码分组。
+> `databases` 列出全部 8 个 D1 数据库的健康状态和延迟。
 
 ---
 
