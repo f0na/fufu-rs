@@ -2,6 +2,7 @@ use axum::extract::State;
 use axum::Json;
 use serde::Serialize;
 use std::sync::Arc;
+use std::sync::OnceLock;
 use worker::Env;
 
 use crate::auth::jwt::Claims;
@@ -9,6 +10,9 @@ use crate::db::{get_db, Db};
 use crate::error::{AppError, AppResult};
 use crate::kv::KvCache;
 use crate::time;
+
+/// 站点启动时间缓存（首次从 KV 读取后缓存在内存中，避免每次请求都读 KV）
+static SITE_STARTED_AT: OnceLock<u64> = OnceLock::new();
 
 // ─── 响应类型 ─────────────────────────────────────────────────
 
@@ -657,18 +661,26 @@ pub async fn dashboard(
 // ─── 站点状态检测 ─────────────────────────────────────────────
 
 async fn get_started_at(env: &Arc<Env>) -> u64 {
+    // 内存缓存命中则直接返回
+    if let Some(&ts) = SITE_STARTED_AT.get() {
+        return ts;
+    }
+
     let kv = match KvCache::new(env) {
         Ok(k) => k,
         Err(_) => return time::now_epoch(),
     };
     let key = "__site_started_at";
-    if let Some(val) = kv.get_str(key).await.unwrap_or(None) {
-        if let Ok(ts) = val.parse::<u64>() {
-            return ts;
-        }
-    }
-    let ts = time::now_epoch();
-    let _ = kv.put_str(key, &ts.to_string(), 0).await;
+    let ts = if let Some(val) = kv.get_str(key).await.unwrap_or(None) {
+        val.parse::<u64>().unwrap_or_else(|_| time::now_epoch())
+    } else {
+        let ts = time::now_epoch();
+        let _ = kv.put_str(key, &ts.to_string(), 0).await;
+        ts
+    };
+
+    // 写入内存缓存，后续请求不再读 KV
+    let _ = SITE_STARTED_AT.set(ts);
     ts
 }
 
@@ -677,23 +689,12 @@ async fn gather_health(env: &Arc<Env>) -> HealthSummary {
     let now = time::now_epoch();
     let uptime_secs = now.saturating_sub(started_at);
 
-    // KV 检测（D1 检测移至 databases 字段）
-    let (kv_status, kv_latency) = match KvCache::new(env) {
-        Ok(kv) => {
-            let start = time::now_epoch();
-            match kv.get_str("__health_check").await {
-                Ok(_) => ("ok".into(), Some(time::now_epoch().saturating_sub(start).max(1))),
-                Err(_) => ("error".into(), None),
-            }
-        }
-        Err(_) => ("error".into(), None),
-    };
-
+    // Dashboard 不重复检测 KV 连通性（专用 /api/health 接口负责），降低 KV 读取
     HealthSummary {
         status: "ok".into(),
         uptime: uptime_secs,
         version: env!("CARGO_PKG_VERSION"),
-        kv: CheckResult { status: kv_status, latency_ms: kv_latency },
+        kv: CheckResult { status: "ok".into(), latency_ms: None },
     }
 }
 

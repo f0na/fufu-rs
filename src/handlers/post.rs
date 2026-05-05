@@ -419,10 +419,10 @@ pub async fn comments_count(
     // 从 GitHub API 获取
     let count = fetch_github_comment_count(&env, number).await;
 
-    // 写入缓存（5 分钟）
+    // 写入缓存（1 小时）
     if let Some(ref kv) = kv {
         let cache_key = format!("gh_comments:{}", number);
-        let _ = kv.put_str(&cache_key, &count.to_string(), 300).await;
+        let _ = kv.put_str(&cache_key, &count.to_string(), 3600).await;
     }
 
     Ok(Json(CommentCount { count }))

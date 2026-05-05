@@ -148,7 +148,7 @@ pub async fn bangumi_search(
     }
 
     let data = post_json(&url, &payload).await?;
-    kv.put_json(&cache_key, &data, 3600).await?;
+    kv.put_json(&cache_key, &data, 7200).await?; // 2小时缓存
     Ok(Json(data))
 }
 
@@ -180,7 +180,7 @@ pub async fn bangumi_calendar(
     let cache_key = "bangumi:calendar";
     let url = "https://api.bgm.tv/calendar";
 
-    cached_fetch(&kv, cache_key, 3600, url).await.map(Json)
+    cached_fetch(&kv, cache_key, 14400, url).await.map(Json) // 4小时缓存（日更数据）
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -210,7 +210,7 @@ pub async fn bangumi_browse(
     };
     let url = format!("https://api.bgm.tv/v0/subjects?{}", query_string);
     let data = fetch_json(&url).await?;
-    kv.put_json(&cache_key, &data, 3600).await?;
+    kv.put_json(&cache_key, &data, 7200).await?; // 2小时缓存
     Ok(Json(data))
 }
 
@@ -241,7 +241,7 @@ pub async fn anime_garden_resources(
     };
     let url = format!("https://api.animes.garden/resources?{}", query_string);
     let data = fetch_json(&url).await?;
-    kv.put_json(&cache_key, &data, 1800).await?;
+    kv.put_json(&cache_key, &data, 7200).await?; // 2小时缓存
     Ok(Json(data))
 }
 
