@@ -12,3 +12,4 @@ pub mod proxy;
 pub mod search;
 pub mod settings;
 pub mod trash;
+pub mod umami;

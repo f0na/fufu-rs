@@ -10,6 +10,8 @@ use crate::handlers::{auth, bangumi, dashboard, friend, gallery, health, legal, 
 pub fn api_router(state: Arc<Env>) -> Router {
     Router::new()
         .route("/api/health", get(health::health_check))
+        // 公共统计
+        .route("/api/stats", get(dashboard::public_stats))
         // 身份验证
         .route("/api/auth/register", post(auth::register))
         .route("/api/auth/login", post(auth::login))

@@ -5,35 +5,175 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 use worker::Env;
 
+use chrono::Datelike;
+
 use crate::auth::jwt::Claims;
 use crate::db::{get_db, Db};
 use crate::error::{AppError, AppResult};
+use crate::handlers::umami::{UmamiClient, UmamiMetricItem, UmamiPageviewsResponse, UmamiStatsResponse, UmamiStatsValue};
 use crate::kv::KvCache;
 use crate::time;
 
-/// 站点启动时间缓存（首次从 KV 读取后缓存在内存中，避免每次请求都读 KV）
+/// 站点启动时间缓存（首次从 KV 读取后缓存在内存中）
 static SITE_STARTED_AT: OnceLock<u64> = OnceLock::new();
 
-// ─── 响应类型 ─────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+//  公共统计（无需认证）
+// ═══════════════════════════════════════════════════════════════
+
+#[derive(Serialize)]
+pub struct PublicStats {
+    pub active_visitors: i64,
+    pub today: PeriodStats,
+    pub last_30_days: PeriodStats,
+    pub pageviews_timeline: Vec<TimeSeriesPoint>,
+    pub deploy_info: DeployInfo,
+}
+
+#[derive(Serialize)]
+pub struct PeriodStats {
+    pub pageviews: i64,
+    pub visitors: i64,
+    pub visits: i64,
+}
+
+#[derive(Serialize)]
+pub struct TimeSeriesPoint {
+    pub date: String,
+    pub pageviews: i64,
+    pub sessions: i64,
+}
+
+/// GET /api/stats — 公共统计
+#[worker::send]
+pub async fn public_stats(
+    State(env): State<Arc<Env>>,
+) -> AppResult<Json<PublicStats>> {
+    let now = chrono::Utc::now();
+    let today_start = timestamp_ms(now.date_naive().and_hms_opt(0, 0, 0).unwrap());
+    let thirty_days_ago = timestamp_ms((now - chrono::Duration::days(30)).naive_utc());
+    let now_ms = timestamp_ms(now.naive_utc());
+    let day_unit = "day";
+
+    let deploy_info = gather_deploy_info(&env).await;
+
+    let umami = match UmamiClient::new(&env).await {
+        Ok(c) => c,
+        Err(_) => {
+            return Ok(Json(PublicStats {
+                active_visitors: 0,
+                today: PeriodStats { pageviews: 0, visitors: 0, visits: 0 },
+                last_30_days: PeriodStats { pageviews: 0, visitors: 0, visits: 0 },
+                pageviews_timeline: vec![],
+                deploy_info,
+            }));
+        }
+    };
+
+    let (active, today_stats, month_stats, pageviews) = futures::join!(
+        umami.get_active_visitors(),
+        umami.get_stats(today_start, now_ms),
+        umami.get_stats(thirty_days_ago, now_ms),
+        umami.get_pageviews(thirty_days_ago, now_ms, day_unit),
+    );
+
+    let active_visitors = active.unwrap_or(0);
+
+    let today = match today_stats {
+        Ok(s) => PeriodStats {
+            pageviews: s.pageviews.value,
+            visitors: s.visitors.value,
+            visits: s.visits.value,
+        },
+        Err(_) => PeriodStats { pageviews: 0, visitors: 0, visits: 0 },
+    };
+
+    let last_30_days = match month_stats {
+        Ok(s) => PeriodStats {
+            pageviews: s.pageviews.value,
+            visitors: s.visitors.value,
+            visits: s.visits.value,
+        },
+        Err(_) => PeriodStats { pageviews: 0, visitors: 0, visits: 0 },
+    };
+
+    let pageviews_timeline = match pageviews {
+        Ok(pv) => {
+            let sessions_map: std::collections::HashMap<&str, i64> = pv
+                .sessions
+                .iter()
+                .filter_map(|p| {
+                    let date = p.x.split_once(' ').map(|(d, _)| d).unwrap_or(&p.x);
+                    Some((date, p.y))
+                })
+                .collect();
+
+            pv.pageviews
+                .iter()
+                .map(|p| {
+                    let date = p.x.split_once(' ').map(|(d, _)| d).unwrap_or(&p.x);
+                    TimeSeriesPoint {
+                        date: date.to_string(),
+                        pageviews: p.y,
+                        sessions: *sessions_map.get(date).unwrap_or(&0),
+                    }
+                })
+                .collect()
+        }
+        Err(_) => vec![],
+    };
+
+    Ok(Json(PublicStats {
+        active_visitors,
+        today,
+        last_30_days,
+        pageviews_timeline,
+        deploy_info,
+    }))
+}
+
+fn timestamp_ms(naive: chrono::NaiveDateTime) -> u64 {
+    naive.and_utc().timestamp_millis() as u64
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  管理仪表盘（需登录）
+// ═══════════════════════════════════════════════════════════════
 
 #[derive(Serialize)]
 pub struct DashboardData {
-    // Cloudflare Analytics
-    today: TodayStats,
-    this_month: MonthStats,
-    total: TotalStats,
-    status_codes: StatusCodeStats,
+    // Umami 数据分析
+    pub analytics: AnalyticsData,
     // 站点运行状态
-    health: HealthSummary,
-    stats: ModuleStats,
+    pub health: HealthSummary,
+    pub stats: ModuleStats,
     // 部署信息
-    deploy_info: DeployInfo,
+    pub deploy_info: DeployInfo,
     // 外部 API 接口状况
-    external_apis: Vec<ExternalApiStatus>,
-    // Worker 运行指标
-    worker_metrics: WorkerMetrics,
+    pub external_apis: Vec<ExternalApiStatus>,
     // 数据库状况
-    databases: Vec<DatabaseCheck>,
+    pub databases: Vec<DatabaseCheck>,
+}
+
+#[derive(Serialize)]
+pub struct AnalyticsData {
+    pub active_visitors: i64,
+    pub today: PeriodStats,
+    pub this_month: PeriodStats,
+    pub last_30_days: PeriodStats,
+    pub pageviews_timeline: Vec<TimeSeriesPoint>,
+    pub top_pages: Vec<MetricItem>,
+    pub top_referrers: Vec<MetricItem>,
+    pub browsers: Vec<MetricItem>,
+    pub os: Vec<MetricItem>,
+    pub devices: Vec<MetricItem>,
+    pub countries: Vec<MetricItem>,
+}
+
+#[derive(Serialize)]
+pub struct MetricItem {
+    pub name: String,
+    pub count: i64,
 }
 
 #[derive(Serialize)]
@@ -50,22 +190,6 @@ pub struct ExternalApiStatus {
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub latency_ms: Option<u64>,
-}
-
-#[derive(Serialize)]
-pub struct WorkerMetrics {
-    pub total_requests: i64,
-    pub error_count: i64,
-    pub error_rate_pct: f64,
-    pub avg_cpu_time_ms: f64,
-    pub errors_by_path: Vec<PathError>,
-}
-
-#[derive(Serialize)]
-pub struct PathError {
-    pub path: String,
-    pub status_code: i64,
-    pub count: i64,
 }
 
 #[derive(Serialize)]
@@ -101,140 +225,214 @@ pub struct ModuleStats {
     pub bangumi_records: u64,
 }
 
-#[derive(Serialize)]
-struct TodayStats {
-    requests: i64,
-    bandwidth: String,
-    avg_duration_ms: i64,
-}
-
-#[derive(Serialize)]
-struct MonthStats {
-    requests: i64,
-    bandwidth: String,
-}
-
-#[derive(Serialize)]
-struct TotalStats {
-    requests: i64,
-    bandwidth: String,
-}
-
-#[derive(Serialize)]
-struct StatusCodeStats {
-    #[serde(rename = "2xx")]
-    xx2: i64,
-    #[serde(rename = "4xx")]
-    xx4: i64,
-    #[serde(rename = "5xx")]
-    xx5: i64,
-}
-
 // ─── 常量 ─────────────────────────────────────────────────────
 
-const CF_API: &str = "https://api.cloudflare.com/client/v4/graphql";
 const USER_AGENT: &str = "fufu-rs/1.0";
 
-const TODAY_QUERY: &str = r#"
-    query ($zoneTag: String!, $startOfDay: String!) {
-        viewer {
-            zones(filter: {zoneTag: $zoneTag}) {
-                httpRequests1hGroups(
-                    limit: 24
-                    filter: {datetime_geq: $startOfDay}
-                    orderBy: [datetime_DESC]
-                ) {
-                    sum {
-                        requests
-                        bytes
-                        edgeDurationMs
-                    }
-                }
-            }
-        }
+// ═══════════════════════════════════════════════════════════════
+//  GET /api/auth/dashboard — 管理仪表盘
+// ═══════════════════════════════════════════════════════════════
+
+#[worker::send]
+pub async fn dashboard(
+    _claims: Claims,
+    State(env): State<Arc<Env>>,
+) -> AppResult<Json<DashboardData>> {
+    let now = chrono::Utc::now();
+    let today_start = timestamp_ms(now.date_naive().and_hms_opt(0, 0, 0).unwrap());
+    let month_start = timestamp_ms(
+        now.date_naive()
+            .with_day(1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap(),
+    );
+    let thirty_days_ago = timestamp_ms((now - chrono::Duration::days(30)).naive_utc());
+    let now_ms = timestamp_ms(now.naive_utc());
+    let day_unit = "day";
+
+    // ── Umami 并行请求 ──────────────────────────────────────
+    let umami = match UmamiClient::new(&env).await {
+        Ok(u) => u,
+        Err(_) => return Err(AppError::Internal("Umami 未配置".into())),
+    };
+
+    let (
+        active,
+        today_s,
+        month_s,
+        last30_s,
+        pv,
+        pages,
+        refs,
+        browsers,
+        os,
+        devices,
+        countries,
+    ) = futures::join!(
+        umami.get_active_visitors(),
+        umami.get_stats(today_start, now_ms),
+        umami.get_stats(month_start, now_ms),
+        umami.get_stats(thirty_days_ago, now_ms),
+        umami.get_pageviews(thirty_days_ago, now_ms, day_unit),
+        umami.get_metrics("url", thirty_days_ago, now_ms, 20),
+        umami.get_metrics("referrer", thirty_days_ago, now_ms, 10),
+        umami.get_metrics("browser", thirty_days_ago, now_ms, 10),
+        umami.get_metrics("os", thirty_days_ago, now_ms, 10),
+        umami.get_metrics("device", thirty_days_ago, now_ms, 10),
+        umami.get_metrics("country", thirty_days_ago, now_ms, 10),
+    );
+
+    let active_visitors = active.unwrap_or(0);
+
+    let today = s_to_period(today_s.unwrap_or_else(|_| default_stats()));
+    let this_month = s_to_period(month_s.unwrap_or_else(|_| default_stats()));
+    let last_30_days = s_to_period(last30_s.unwrap_or_else(|_| default_stats()));
+
+    let pageviews_timeline = pageviews_to_timeline(pv.unwrap_or_else(|_| default_pageviews()));
+
+    fn metric_items(items: Result<Vec<UmamiMetricItem>, AppError>) -> Vec<MetricItem> {
+        items
+            .unwrap_or_default()
+            .into_iter()
+            .map(|m| MetricItem {
+                name: m.x,
+                count: m.y,
+            })
+            .collect()
     }
-"#;
 
-const MONTH_QUERY: &str = r#"
-    query ($zoneTag: String!, $startOfMonth: String!) {
-        viewer {
-            zones(filter: {zoneTag: $zoneTag}) {
-                httpRequests1dGroups(
-                    limit: 31
-                    filter: {date_geq: $startOfMonth}
-                    orderBy: [date_DESC]
-                ) {
-                    sum {
-                        requests
-                        bytes
-                    }
-                }
-            }
-        }
+    let analytics = AnalyticsData {
+        active_visitors,
+        today,
+        this_month,
+        last_30_days,
+        pageviews_timeline,
+        top_pages: metric_items(pages),
+        top_referrers: metric_items(refs),
+        browsers: metric_items(browsers),
+        os: metric_items(os),
+        devices: metric_items(devices),
+        countries: metric_items(countries),
+    };
+
+    // ── 其余数据并行 ────────────────────────────────────────
+    let (health, stats, deploy_info, databases, external_apis) = futures::join!(
+        gather_health(&env),
+        gather_stats(&env),
+        gather_deploy_info(&env),
+        check_all_databases(&env),
+        check_external_apis(&env),
+    );
+
+    Ok(Json(DashboardData {
+        analytics,
+        health,
+        stats,
+        deploy_info,
+        external_apis,
+        databases,
+    }))
+}
+
+fn s_to_period(s: UmamiStatsResponse) -> PeriodStats {
+    PeriodStats {
+        pageviews: s.pageviews.value,
+        visitors: s.visitors.value,
+        visits: s.visits.value,
     }
-"#;
+}
 
-const TOTAL_QUERY: &str = r#"
-    query ($zoneTag: String!, $startDate: String!) {
-        viewer {
-            zones(filter: {zoneTag: $zoneTag}) {
-                httpRequests1dGroups(
-                    limit: 30
-                    filter: {date_geq: $startDate}
-                    orderBy: [date_DESC]
-                ) {
-                    sum {
-                        requests
-                        bytes
-                        edgeDurationMs
-                    }
-                }
-                httpRequestsAdaptiveGroups(
-                    limit: 10
-                    filter: {date_geq: $startDate}
-                    orderBy: [count_DESC]
-                ) {
-                    dimensions {
-                        statusCode
-                    }
-                    count
-                }
-            }
-        }
+fn default_stats() -> UmamiStatsResponse {
+    UmamiStatsResponse {
+        pageviews: UmamiStatsValue { value: 0, prev: 0 },
+        visitors: UmamiStatsValue { value: 0, prev: 0 },
+        visits: UmamiStatsValue { value: 0, prev: 0 },
+        bounces: UmamiStatsValue { value: 0, prev: 0 },
+        totaltime: UmamiStatsValue { value: 0, prev: 0 },
     }
-"#;
+}
 
-const ERROR_BREAKDOWN_QUERY: &str = r#"
-    query ($zoneTag: String!, $startDate: String!) {
-        viewer {
-            zones(filter: {zoneTag: $zoneTag}) {
-                httpRequestsAdaptiveGroups(
-                    limit: 100
-                    filter: {date_geq: $startDate, edgeResponseStatus_gt: 399}
-                    orderBy: [count_DESC]
-                ) {
-                    dimensions {
-                        clientRequestPath
-                        edgeResponseStatus
-                    }
-                    count
-                }
-            }
-        }
+fn default_pageviews() -> UmamiPageviewsResponse {
+    UmamiPageviewsResponse {
+        pageviews: vec![],
+        sessions: vec![],
     }
-"#;
+}
 
-// ─── 工具函数 ─────────────────────────────────────────────────
+fn pageviews_to_timeline(pv: UmamiPageviewsResponse) -> Vec<TimeSeriesPoint> {
+    let sessions_map: std::collections::HashMap<&str, i64> = pv
+        .sessions
+        .iter()
+        .filter_map(|p| {
+            let date = p.x.split_once(' ').map(|(d, _)| d).unwrap_or(&p.x);
+            Some((date, p.y))
+        })
+        .collect();
 
-fn format_bytes(bytes: f64) -> String {
-    if bytes >= 1_073_741_824.0 {
-        format!("{:.1} GB", bytes / 1_073_741_824.0)
-    } else if bytes >= 1_048_576.0 {
-        format!("{:.1} MB", bytes / 1_048_576.0)
-    } else if bytes >= 1024.0 {
-        format!("{:.1} KB", bytes / 1024.0)
+    pv.pageviews
+        .iter()
+        .map(|p| {
+            let date = p.x.split_once(' ').map(|(d, _)| d).unwrap_or(&p.x);
+            TimeSeriesPoint {
+                date: date.to_string(),
+                pageviews: p.y,
+                sessions: *sessions_map.get(date).unwrap_or(&0),
+            }
+        })
+        .collect()
+}
+
+// ─── 站点状态检测 ─────────────────────────────────────────────
+
+async fn get_started_at(env: &Arc<Env>) -> u64 {
+    if let Some(&ts) = SITE_STARTED_AT.get() {
+        return ts;
+    }
+
+    let kv = match KvCache::new(env) {
+        Ok(k) => k,
+        Err(_) => return time::now_epoch(),
+    };
+    let key = "__site_started_at";
+    let ts = if let Some(val) = kv.get_str(key).await.unwrap_or(None) {
+        val.parse::<u64>().unwrap_or_else(|_| time::now_epoch())
     } else {
-        format!("{} B", bytes as i64)
+        let ts = time::now_epoch();
+        let _ = kv.put_str(key, &ts.to_string(), 0).await;
+        ts
+    };
+
+    let _ = SITE_STARTED_AT.set(ts);
+    ts
+}
+
+async fn gather_health(env: &Arc<Env>) -> HealthSummary {
+    let started_at = get_started_at(env).await;
+    let now = time::now_epoch();
+    let uptime_secs = now.saturating_sub(started_at);
+
+    HealthSummary {
+        status: "ok".into(),
+        uptime: uptime_secs,
+        version: env!("CARGO_PKG_VERSION"),
+        kv: CheckResult {
+            status: "ok".into(),
+            latency_ms: None,
+        },
+    }
+}
+
+async fn gather_deploy_info(env: &Arc<Env>) -> DeployInfo {
+    let started_at = get_started_at(env).await;
+    let now = time::now_epoch();
+    let uptime_secs = now.saturating_sub(started_at);
+
+    DeployInfo {
+        deployed_at: epoch_to_cst_str(started_at),
+        deployed_at_epoch: started_at,
+        uptime_seconds: uptime_secs,
+        uptime_human: format_uptime(uptime_secs),
     }
 }
 
@@ -268,79 +466,18 @@ fn format_uptime(seconds: u64) -> String {
     parts.concat()
 }
 
-// ─── Cloudflare GraphQL ──────────────────────────────────────
-
-async fn query_cf_graphql(
-    api_token: &str,
-    query: &str,
-    variables: &serde_json::Value,
-) -> AppResult<serde_json::Value> {
-    let client = reqwest::Client::new();
-    let resp = client
-        .post(CF_API)
-        .header("Authorization", format!("Bearer {}", api_token))
-        .header("User-Agent", USER_AGENT)
-        .json(&serde_json::json!({
-            "query": query,
-            "variables": variables,
-        }))
-        .send()
-        .await
-        .map_err(|e| AppError::ExternalApiFailure(e.to_string()))?;
-    let json: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| AppError::ExternalApiFailure(e.to_string()))?;
-
-    // 检查 GraphQL 错误
-    if json.get("errors").and_then(|e| e.as_array()).map_or(false, |e| !e.is_empty()) {
-        return Err(AppError::ExternalApiFailure("Cloudflare Analytics API 返回错误".into()));
-    }
-
-    Ok(json)
-}
-
-async fn query_error_breakdown(api_token: &str, zone_id: &str, start_30d: &str) -> serde_json::Value {
-    query_cf_graphql(
-        api_token,
-        ERROR_BREAKDOWN_QUERY,
-        &serde_json::json!({
-            "zoneTag": zone_id,
-            "startDate": start_30d,
-        }),
-    )
-    .await
-    .unwrap_or(serde_json::Value::Null)
-}
-
-fn parse_error_breakdown(data: &serde_json::Value) -> Vec<PathError> {
-    let mut errors = Vec::new();
-    if let Some(groups) = data["data"]["viewer"]["zones"][0]
-        .get("httpRequestsAdaptiveGroups")
-        .and_then(|v| v.as_array())
-    {
-        for group in groups {
-            let path = group["dimensions"]["clientRequestPath"]
-                .as_str()
-                .unwrap_or("unknown")
-                .to_string();
-            let status_code = group["dimensions"]["edgeResponseStatus"]
-                .as_i64()
-                .unwrap_or(0);
-            let count = group["count"].as_i64().unwrap_or(0);
-            errors.push(PathError { path, status_code, count });
-        }
-    }
-    errors
-}
-
 // ─── 外部 API 健康检测 ────────────────────────────────────────
 
 async fn check_external_api(_env: &Arc<Env>, name: &str, url: &str) -> ExternalApiStatus {
     let client = reqwest::Client::new();
     let start = time::now_epoch();
 
-    match client.get(url).header("User-Agent", USER_AGENT).send().await {
+    match client
+        .get(url)
+        .header("User-Agent", USER_AGENT)
+        .send()
+        .await
+    {
         Ok(resp) => {
             let latency = time::now_epoch().saturating_sub(start).max(1);
             let status = if resp.status().is_success() || resp.status().is_redirection() {
@@ -446,312 +583,7 @@ async fn check_all_databases(env: &Arc<Env>) -> Vec<DatabaseCheck> {
     futures::future::join_all(futures).await
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  GET /api/auth/dashboard — 仪表盘
-// ═══════════════════════════════════════════════════════════════
-
-#[worker::send]
-pub async fn dashboard(
-    _claims: Claims,
-    State(env): State<Arc<Env>>,
-) -> AppResult<Json<DashboardData>> {
-    let api_token = env
-        .var("CF_API_TOKEN")
-        .map_err(|_| AppError::Internal("CF_API_TOKEN 未配置".into()))?
-        .to_string();
-    let zone_id = env
-        .var("CF_ZONE_ID")
-        .map_err(|_| AppError::Internal("CF_ZONE_ID 未配置".into()))?
-        .to_string();
-
-    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-    let month_start = chrono::Utc::now()
-        .format("%Y-%m-01")
-        .to_string();
-    let start_30d = (chrono::Utc::now() - chrono::Duration::days(30))
-        .format("%Y-%m-%d")
-        .to_string();
-
-    // ── 并行执行所有独立请求 ──────────────────────────────────
-    let tv_today = serde_json::json!({
-        "zoneTag": zone_id,
-        "startOfDay": format!("{}T00:00:00Z", today),
-    });
-    let tv_month = serde_json::json!({
-        "zoneTag": zone_id,
-        "startOfMonth": month_start,
-    });
-    let tv_total = serde_json::json!({
-        "zoneTag": zone_id,
-        "startDate": start_30d,
-    });
-
-    let (
-        today_res,
-        month_res,
-        total_res,
-        err_res,
-        health,
-        stats,
-        deploy_info,
-        databases,
-        external_apis,
-    ) = futures::join!(
-        query_cf_graphql(&api_token, TODAY_QUERY, &tv_today),
-        query_cf_graphql(&api_token, MONTH_QUERY, &tv_month),
-        query_cf_graphql(&api_token, TOTAL_QUERY, &tv_total),
-        query_error_breakdown(&api_token, &zone_id, &start_30d),
-        gather_health(&env),
-        gather_stats(&env),
-        gather_deploy_info(&env),
-        check_all_databases(&env),
-        check_external_apis(&env),
-    );
-
-    // ── 解析今日数据 ──────────────────────────────────────────
-    let today_zone = &today_res?["data"]["viewer"]["zones"][0];
-
-    let today_requests: i64 = today_zone
-        .get("httpRequests1hGroups")
-        .and_then(|v| v.as_array())
-        .map(|groups| {
-            groups
-                .iter()
-                .filter_map(|g| g["sum"]["requests"].as_f64())
-                .sum::<f64>() as i64
-        })
-        .unwrap_or(0);
-
-    let today_bytes: f64 = today_zone
-        .get("httpRequests1hGroups")
-        .and_then(|v| v.as_array())
-        .map(|groups| {
-            groups
-                .iter()
-                .filter_map(|g| g["sum"]["bytes"].as_f64())
-                .sum::<f64>()
-        })
-        .unwrap_or(0.0);
-
-    let today_duration: f64 = today_zone
-        .get("httpRequests1hGroups")
-        .and_then(|v| v.as_array())
-        .map(|groups| {
-            let total_duration: f64 = groups
-                .iter()
-                .filter_map(|g| g["sum"]["edgeDurationMs"].as_f64())
-                .sum::<f64>();
-            let count = groups
-                .iter()
-                .filter(|g| g["sum"]["edgeDurationMs"].as_f64().unwrap_or(0.0) > 0.0)
-                .count() as f64;
-            if count > 0.0 {
-                total_duration / count
-            } else {
-                0.0
-            }
-        })
-        .unwrap_or(0.0);
-
-    // ── 解析本月数据 ──────────────────────────────────────────
-    let month_zone = &month_res?["data"]["viewer"]["zones"][0];
-
-    let month_requests: i64 = month_zone
-        .get("httpRequests1dGroups")
-        .and_then(|v| v.as_array())
-        .map(|groups| {
-            groups
-                .iter()
-                .filter_map(|g| g["sum"]["requests"].as_f64())
-                .sum::<f64>() as i64
-        })
-        .unwrap_or(0);
-
-    let month_bytes: f64 = month_zone
-        .get("httpRequests1dGroups")
-        .and_then(|v| v.as_array())
-        .map(|groups| {
-            groups
-                .iter()
-                .filter_map(|g| g["sum"]["bytes"].as_f64())
-                .sum::<f64>()
-        })
-        .unwrap_or(0.0);
-
-    // ── 解析总数据 + 状态码 ──────────────────────────────────
-    let total_data = total_res?;
-    let total_zone = &total_data["data"]["viewer"]["zones"][0];
-
-    let total_requests: i64 = total_zone
-        .get("httpRequests1dGroups")
-        .and_then(|v| v.as_array())
-        .map(|groups| {
-            groups
-                .iter()
-                .filter_map(|g| g["sum"]["requests"].as_f64())
-                .sum::<f64>() as i64
-        })
-        .unwrap_or(0);
-
-    let total_bytes: f64 = total_zone
-        .get("httpRequests1dGroups")
-        .and_then(|v| v.as_array())
-        .map(|groups| {
-            groups
-                .iter()
-                .filter_map(|g| g["sum"]["bytes"].as_f64())
-                .sum::<f64>()
-        })
-        .unwrap_or(0.0);
-
-    // 聚合状态码
-    let mut sc_2xx: i64 = 0;
-    let mut sc_4xx: i64 = 0;
-    let mut sc_5xx: i64 = 0;
-
-    if let Some(groups) = total_zone
-        .get("httpRequestsAdaptiveGroups")
-        .and_then(|v| v.as_array())
-    {
-        for group in groups {
-            let code = group["dimensions"]["statusCode"]
-                .as_i64()
-                .unwrap_or(0);
-            let count = group["count"].as_i64().unwrap_or(0);
-            match code / 100 {
-                2 => sc_2xx += count,
-                4 => sc_4xx += count,
-                5 => sc_5xx += count,
-                _ => {}
-            }
-        }
-    }
-
-    // ── Worker 运行指标 ──────────────────────────────────────
-    let worker_metrics = gather_worker_metrics(&total_data, &err_res, total_requests);
-
-    Ok(Json(DashboardData {
-        today: TodayStats {
-            requests: today_requests,
-            bandwidth: format_bytes(today_bytes),
-            avg_duration_ms: today_duration as i64,
-        },
-        this_month: MonthStats {
-            requests: month_requests,
-            bandwidth: format_bytes(month_bytes),
-        },
-        total: TotalStats {
-            requests: total_requests,
-            bandwidth: format_bytes(total_bytes),
-        },
-        status_codes: StatusCodeStats {
-            xx2: sc_2xx,
-            xx4: sc_4xx,
-            xx5: sc_5xx,
-        },
-        stats,
-        health,
-        deploy_info,
-        external_apis,
-        worker_metrics,
-        databases,
-    }))
-}
-
-// ─── 站点状态检测 ─────────────────────────────────────────────
-
-async fn get_started_at(env: &Arc<Env>) -> u64 {
-    // 内存缓存命中则直接返回
-    if let Some(&ts) = SITE_STARTED_AT.get() {
-        return ts;
-    }
-
-    let kv = match KvCache::new(env) {
-        Ok(k) => k,
-        Err(_) => return time::now_epoch(),
-    };
-    let key = "__site_started_at";
-    let ts = if let Some(val) = kv.get_str(key).await.unwrap_or(None) {
-        val.parse::<u64>().unwrap_or_else(|_| time::now_epoch())
-    } else {
-        let ts = time::now_epoch();
-        let _ = kv.put_str(key, &ts.to_string(), 0).await;
-        ts
-    };
-
-    // 写入内存缓存，后续请求不再读 KV
-    let _ = SITE_STARTED_AT.set(ts);
-    ts
-}
-
-async fn gather_health(env: &Arc<Env>) -> HealthSummary {
-    let started_at = get_started_at(env).await;
-    let now = time::now_epoch();
-    let uptime_secs = now.saturating_sub(started_at);
-
-    // Dashboard 不重复检测 KV 连通性（专用 /api/health 接口负责），降低 KV 读取
-    HealthSummary {
-        status: "ok".into(),
-        uptime: uptime_secs,
-        version: env!("CARGO_PKG_VERSION"),
-        kv: CheckResult { status: "ok".into(), latency_ms: None },
-    }
-}
-
-async fn gather_deploy_info(env: &Arc<Env>) -> DeployInfo {
-    let started_at = get_started_at(env).await;
-    let now = time::now_epoch();
-    let uptime_secs = now.saturating_sub(started_at);
-
-    DeployInfo {
-        deployed_at: epoch_to_cst_str(started_at),
-        deployed_at_epoch: started_at,
-        uptime_seconds: uptime_secs,
-        uptime_human: format_uptime(uptime_secs),
-    }
-}
-
-fn gather_worker_metrics(
-    total_data: &serde_json::Value,
-    error_data: &serde_json::Value,
-    total_requests: i64,
-) -> WorkerMetrics {
-    // 从 total_data 解析 edgeDurationMs（30 天总计 CPU 时间）
-    let total_cpu_ms: f64 = total_data["data"]["viewer"]["zones"][0]
-        .get("httpRequests1dGroups")
-        .and_then(|v| v.as_array())
-        .map(|groups| {
-            groups
-                .iter()
-                .filter_map(|g| g["sum"]["edgeDurationMs"].as_f64())
-                .sum::<f64>()
-        })
-        .unwrap_or(0.0);
-
-    let avg_cpu_time_ms = if total_requests > 0 {
-        ((total_cpu_ms / total_requests as f64) * 100.0).round() / 100.0
-    } else {
-        0.0
-    };
-
-    // 解析错误分布
-    let errors_by_path = parse_error_breakdown(error_data);
-    let error_count: i64 = errors_by_path.iter().map(|e| e.count).sum();
-
-    let error_rate_pct = if total_requests > 0 {
-        ((error_count as f64 / total_requests as f64) * 100.0 * 100.0).round() / 100.0
-    } else {
-        0.0
-    };
-
-    WorkerMetrics {
-        total_requests,
-        error_count,
-        error_rate_pct,
-        avg_cpu_time_ms,
-        errors_by_path,
-    }
-}
+// ─── 模块统计 ─────────────────────────────────────────────────
 
 async fn count_table(env: &Arc<Env>, db_instance: Db, table: &str) -> u64 {
     let db = match get_db(env, db_instance) {

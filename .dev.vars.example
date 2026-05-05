@@ -1,63 +1,21 @@
-# 本地开发环境变量
-# 1. 复制模板
-# cp .dev.vars.example .dev.vars
-# 或
-# copy .dev.vars.example .dev.vars
+# ============================================
+# fufu-rs 环境变量示例
+# 复制为 .env 或通过 wrangler secret put 设置
+# ============================================
 
-# 2. 编辑填入实际值
-# .dev.vars
+# --- JWT ---
+JWT_SECRET=your-jwt-secret-here
 
-# ─── 身份验证 ────────────────────────────────────────────────
-# 生成方式: openssl rand -base64 32
-# 任意 32 字节随机字符串即可，不要用 xxx
-JWT_SECRET=xxx
+# --- GitHub（文章评论数） ---
+GITHUB_TOKEN=ghp_xxxxxxxxxxxx
+GITHUB_REPO=user/repo
 
-# ─── GitHub 评论数代理 ────────────────────────────────────────
-# 获取方式:
-#   1. 访问 https://github.com/settings/tokens
-#   2. 点击 "Generate new token (classic)"
-#   3. 勾选 public_repo 权限
-#   4. 生成后复制 token
-GITHUB_TOKEN=xxx
+# --- 百度翻译 ---
+BAIDU_TRANSLATE_APPID=your-app-id
+BAIDU_TRANSLATE_SECRET=your-secret
 
-# 格式: "用户名/仓库名"，如 "nna/my-blog"
-# 只有设为对应仓库的 Discussion 才能获取评论数
-GITHUB_REPO=username/repo
-
-# ─── 百度翻译 ────────────────────────────────────────────────
-# 获取方式:
-#   1. 访问 https://fanyi-api.baidu.com/
-#   2. 注册/登录百度账号
-#   3. 进入"管理控制台" → "总览"
-#   4. 开通"通用翻译"服务（标准版免费）
-#   5. 查看 App ID 和密钥
-# 免费版每月 100 万字符，个人站点足够
-BAIDU_TRANSLATE_APPID=xxx
-BAIDU_TRANSLATE_SECRET=xxx
-
-# ─── Cloudflare Analytics 仪表盘 ──────────────────────────────
-# CF_API_TOKEN 获取方式:
-#   1. 访问 https://dash.cloudflare.com/profile/api-tokens
-#   2. "Create Token" → "Create Custom Token"
-#   3. Permissions: Analytics → Read
-#   4. Zone Resources: 选择你的域名
-#   5. 创建后复制 token（只会显示一次）
-CF_API_TOKEN=xxx
-
-# CF_ZONE_ID 获取方式:
-#   1. 访问 https://dash.cloudflare.com/
-#   2. 选择域名 → 右侧 "Zone ID"
-#   3. 复制即可
-CF_ZONE_ID=xxx
-
-# ─── CORS（跨域） ─────────────────────────────────────────────
-# 本地开发时无需设置（默认允许所有来源）
-# 生产环境用逗号分隔多个域名，如:
-# CORS_ORIGINS=https://fufu.moe,https://www.fufu.moe
-# CORS_ORIGINS=xxx
-
-# ─── 预留 ──────────────────────────────────────────────────────
-# RESET_TOKEN_SECRET=xxx                    # 重置令牌密钥（暂未使用）
-# GITHUB_CLIENT_ID=xxx
-# GITHUB_CLIENT_SECRET=xxx
-# GITHUB_REDIRECT_URI=http://localhost:5173/home/github-callback
+# --- Umami 统计 ---
+UMAMI_API_URL=https://analytics.fufu.moe
+UMAMI_USERNAME=admin
+UMAMI_PASSWORD=your-password
+UMAMI_WEBSITE_ID=your-website-uuid
