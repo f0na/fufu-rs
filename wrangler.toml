@@ -3,7 +3,7 @@ main = "build/index.js"
 compatibility_date = "2026-01-01"
 
 [build]
-command = "worker-build --release"
+command = "PATH=\"$HOME/.cargo/bin:$PATH\" worker-build --release"
 
 [dev]
 port = 8787

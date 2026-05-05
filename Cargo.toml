@@ -10,8 +10,8 @@ wasm-opt = false
 crate-type = ["cdylib"]
 
 [dependencies]
-worker = { version = "0.7", features = ["axum", "d1", "http"] }
-worker-macros = { version = "0.7", features = ["http"] }
+worker = { version = "0.8", features = ["axum", "d1", "http"] }
+worker-macros = { version = "0.8", features = ["http"] }
 wasm-bindgen-futures = "0.4"
 wasm-bindgen = "0.2"
 
