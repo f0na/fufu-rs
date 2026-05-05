@@ -3,7 +3,7 @@ main = "build/index.js"
 compatibility_date = "2026-01-01"
 
 [build]
-command = "command -v worker-build 2>/dev/null || cargo install worker-build@0.8 && worker-build --release"
+command = "worker-build --release"
 
 [dev]
 port = 8787
