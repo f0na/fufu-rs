@@ -55,10 +55,14 @@ jobs:
             - uses: actions/setup-node@v4
               with:
                   node-version: '22'
-            - name: Install wrangler
-              run: npm install -g wrangler@4
-            - name: Deploy
-              run: wrangler deploy --config wrangler.jsonc
-              env:
-                  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-                  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+            - name: Replace system Node.js with v22
+              run: |
+                  sudo rm -f /usr/local/bin/node /usr/local/bin/npx /usr/local/bin/npm
+                  sudo ln -s "$(which node)" /usr/local/bin/node
+                  sudo ln -s "$(which npx)" /usr/local/bin/npx
+                  node --version
+            - uses: cloudflare/wrangler-action@v3
+              with:
+                  apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+                  accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+                  wranglerVersion: '4.88.0'
