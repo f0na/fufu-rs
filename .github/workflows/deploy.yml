@@ -37,6 +37,18 @@ jobs:
                     cargo install worker-build
                   fi
 
+            - name: Replace placeholders in wrangler.jsonc
+              run: |
+                  sed -i "s/\${FUFU_KV_ID}/${{ secrets.FUFU_KV_ID }}/g" wrangler.jsonc
+                  sed -i "s/\${DB_CORE_ID}/${{ secrets.DB_CORE_ID }}/g" wrangler.jsonc
+                  sed -i "s/\${DB_POSTS_ID}/${{ secrets.DB_POSTS_ID }}/g" wrangler.jsonc
+                  sed -i "s/\${DB_MEDIA_ID}/${{ secrets.DB_MEDIA_ID }}/g" wrangler.jsonc
+                  sed -i "s/\${DB_BANGUMI_ID}/${{ secrets.DB_BANGUMI_ID }}/g" wrangler.jsonc
+                  sed -i "s/\${DB_SOCIAL_ID}/${{ secrets.DB_SOCIAL_ID }}/g" wrangler.jsonc
+                  sed -i "s/\${DB_LIKES_ID}/${{ secrets.DB_LIKES_ID }}/g" wrangler.jsonc
+                  sed -i "s/\${DB_LEGAL_ID}/${{ secrets.DB_LEGAL_ID }}/g" wrangler.jsonc
+                  sed -i "s/\${DB_AUTH_ID}/${{ secrets.DB_AUTH_ID }}/g" wrangler.jsonc
+
             - name: Build
               run: worker-build --release
 

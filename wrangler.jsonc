@@ -1,0 +1,33 @@
+{
+	"$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
+	"name": "fufu-rs",
+	"main": "build/index.js",
+	"compatibility_date": "2026-01-01",
+
+	"build": {
+		"command": "worker-build --release"
+	},
+
+	"dev": {
+		"port": 8787,
+		"ip": "127.0.0.1"
+	},
+
+	"kv_namespaces": [
+		{
+			"binding": "FUFU_KV",
+			"id": "${FUFU_KV_ID}"
+		}
+	],
+
+	"d1_databases": [
+		{ "binding": "FUFU_CORE",    "database_name": "fufu_core",    "database_id": "${DB_CORE_ID}" },
+		{ "binding": "FUFU_POSTS",   "database_name": "fufu_posts",   "database_id": "${DB_POSTS_ID}" },
+		{ "binding": "FUFU_MEDIA",   "database_name": "fufu_media",   "database_id": "${DB_MEDIA_ID}" },
+		{ "binding": "FUFU_BANGUMI", "database_name": "fufu_bangumi", "database_id": "${DB_BANGUMI_ID}" },
+		{ "binding": "FUFU_SOCIAL",  "database_name": "fufu_social",  "database_id": "${DB_SOCIAL_ID}" },
+		{ "binding": "FUFU_LIKES",   "database_name": "fufu_likes",   "database_id": "${DB_LIKES_ID}" },
+		{ "binding": "FUFU_LEGAL",   "database_name": "fufu_legal",   "database_id": "${DB_LEGAL_ID}" },
+		{ "binding": "FUFU_AUTH",    "database_name": "fufu_auth",    "database_id": "${DB_AUTH_ID}" }
+	]
+}
