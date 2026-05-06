@@ -188,12 +188,7 @@ pub struct MetricItem {
 
 #[derive(Serialize)]
 pub struct DeployInfo {
-    pub deployed_at: String,
     pub deployed_at_epoch: u64,
-    /// 站点级总运行时长（秒），从首次部署至今，持久化不因 Worker 重启重置
-    /// 当前 Worker 实例运行时长见 health.uptime
-    pub uptime_seconds: u64,
-    pub uptime_human: String,
 }
 
 #[derive(Serialize)]
@@ -499,15 +494,8 @@ async fn gather_health(env: &Arc<Env>) -> HealthSummary {
 }
 
 async fn gather_deploy_info(env: &Arc<Env>) -> DeployInfo {
-    let started_at = get_started_at(env).await;
-    let now = time::now_epoch();
-    let uptime_secs = now.saturating_sub(started_at);
-
     DeployInfo {
-        deployed_at: epoch_to_cst_str(started_at),
-        deployed_at_epoch: started_at,
-        uptime_seconds: uptime_secs,
-        uptime_human: format_uptime(uptime_secs),
+        deployed_at_epoch: get_started_at(env).await,
     }
 }
 
@@ -559,36 +547,6 @@ async fn gather_health_checks(env: &Arc<Env>) -> HealthOverview {
         uptime,
         checks: HealthChecks { d1, kv },
     }
-}
-
-fn epoch_to_cst_str(epoch: u64) -> String {
-    use chrono::{DateTime, FixedOffset};
-    match DateTime::from_timestamp(epoch as i64, 0) {
-        Some(dt) => {
-            let cst = FixedOffset::east_opt(8 * 3600).expect("CST offset");
-            dt.with_timezone(&cst).format("%Y-%m-%d %H:%M:%S").to_string()
-        }
-        None => "unknown".into(),
-    }
-}
-
-fn format_uptime(seconds: u64) -> String {
-    let days = seconds / 86400;
-    let hours = (seconds % 86400) / 3600;
-    let minutes = (seconds % 3600) / 60;
-    let secs = seconds % 60;
-    let mut parts = Vec::new();
-    if days > 0 {
-        parts.push(format!("{}天", days));
-    }
-    if hours > 0 {
-        parts.push(format!("{}小时", hours));
-    }
-    if minutes > 0 {
-        parts.push(format!("{}分", minutes));
-    }
-    parts.push(format!("{}秒", secs));
-    parts.concat()
 }
 
 // ─── 外部 API 健康检测 ────────────────────────────────────────

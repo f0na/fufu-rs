@@ -70,10 +70,7 @@
     { "date": "2026-04-05", "pageviews": 150, "sessions": 80 }
   ],
   "deploy_info": {
-    "deployed_at": "2026-05-01 08:00:00",
-    "deployed_at_epoch": 1746086400,
-    "uptime_seconds": 86400,
-    "uptime_human": "1天0小时0分0秒"
+    "deployed_at_epoch": 1746086400
   }
 }
 ```
@@ -210,10 +207,7 @@
     "posts": 10, "friends": 5, "links": 20, "galleries": 3, "bangumi_records": 15
   },
   "deploy_info": {
-    "deployed_at": "2026-05-01 08:00:00",
-    "deployed_at_epoch": 1746086400,
-    "uptime_seconds": 86400,
-    "uptime_human": "1天0小时0分0秒"
+    "deployed_at_epoch": 1746086400
   },
   "external_apis": [
     { "name": "Bangumi", "status": "ok", "latency_ms": 120 },
