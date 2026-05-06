@@ -16,18 +16,18 @@
 	"kv_namespaces": [
 		{
 			"binding": "FUFU_KV",
-			"id": "${FUFU_KV_ID}"
+			"id": "FUFU_KV_ID_PLACEHOLDER"
 		}
 	],
 
 	"d1_databases": [
-		{ "binding": "FUFU_CORE",    "database_name": "fufu_core",    "database_id": "${DB_CORE_ID}" },
-		{ "binding": "FUFU_POSTS",   "database_name": "fufu_posts",   "database_id": "${DB_POSTS_ID}" },
-		{ "binding": "FUFU_MEDIA",   "database_name": "fufu_media",   "database_id": "${DB_MEDIA_ID}" },
-		{ "binding": "FUFU_BANGUMI", "database_name": "fufu_bangumi", "database_id": "${DB_BANGUMI_ID}" },
-		{ "binding": "FUFU_SOCIAL",  "database_name": "fufu_social",  "database_id": "${DB_SOCIAL_ID}" },
-		{ "binding": "FUFU_LIKES",   "database_name": "fufu_likes",   "database_id": "${DB_LIKES_ID}" },
-		{ "binding": "FUFU_LEGAL",   "database_name": "fufu_legal",   "database_id": "${DB_LEGAL_ID}" },
-		{ "binding": "FUFU_AUTH",    "database_name": "fufu_auth",    "database_id": "${DB_AUTH_ID}" }
+		{ "binding": "FUFU_CORE",    "database_name": "fufu_core",    "database_id": "5d53dbf9-fb91-4ced-8509-95fa9897f0da" },
+		{ "binding": "FUFU_POSTS",   "database_name": "fufu_posts",   "database_id": "8ce79700-8e79-4ebe-88e6-05c946c0f2f5" },
+		{ "binding": "FUFU_MEDIA",   "database_name": "fufu_media",   "database_id": "5da2d629-dfd8-4677-9dda-27ea04606a83" },
+		{ "binding": "FUFU_BANGUMI", "database_name": "fufu_bangumi", "database_id": "54c8c199-e4f6-40fa-b32a-2f9f6660f371" },
+		{ "binding": "FUFU_SOCIAL",  "database_name": "fufu_social",  "database_id": "c48455c6-7b1e-4988-8ec0-cf6f1f229f3a" },
+		{ "binding": "FUFU_LIKES",   "database_name": "fufu_likes",   "database_id": "4b55ff18-453e-4e50-9f7a-a975ccdaed8b" },
+		{ "binding": "FUFU_LEGAL",   "database_name": "fufu_legal",   "database_id": "ae72957f-d12e-49e2-a99c-0ae8aaabd09d" },
+		{ "binding": "FUFU_AUTH",    "database_name": "fufu_auth",    "database_id": "8fbdab07-1cab-4a96-aafa-577ba5b4d30a" }
 	]
 }
