@@ -62,7 +62,27 @@
 
 ---
 
-## 2. 身份认证
+## 2. 健康检查
+
+### GET /api/health
+
+认证：无
+
+```json
+// 200
+{
+  "status": "ok",
+  "instance_started_at_epoch": 1778012246,
+  "checks": {
+    "d1": { "status": "ok", "latency_ms": 12 },
+    "kv": { "status": "ok", "latency_ms": 8 }
+  }
+}
+```
+
+---
+
+## 3. 身份认证
 
 ### POST /api/auth/register
 
@@ -146,7 +166,7 @@
 
 ---
 
-## 3. 管理仪表盘
+## 4. 管理仪表盘
 
 ### GET /api/auth/dashboard
 
@@ -207,7 +227,7 @@
 
 ---
 
-## 4. 站点设置
+## 5. 站点设置
 
 CRUD 规则：GET 公开，PUT/POST/DELETE 需登录。删除均为逻辑删除（设 `deleted_at`）。
 
@@ -281,7 +301,7 @@ CRUD 规则：GET 公开，PUT/POST/DELETE 需登录。删除均为逻辑删除�
 
 ---
 
-## 5. 博客文章
+## 6. 博客文章
 
 ### GET /api/posts — 列表
 
@@ -343,7 +363,7 @@ query: `?page=1&page_size=10&tag=rust&year=2026&status=published`
 
 ---
 
-## 6. 全站搜索
+## 7. 全站搜索
 
 ### GET /api/search
 
@@ -367,7 +387,7 @@ query: `?page=1&page_size=10&tag=rust&year=2026&status=published`
 
 ---
 
-## 7. 点赞
+## 8. 点赞
 
 ### GET /api/likes/{target_type}/{target_id}
 ### POST /api/likes/{target_type}/{target_id}
@@ -381,7 +401,7 @@ query: `?page=1&page_size=10&tag=rust&year=2026&status=published`
 
 ---
 
-## 8. 友人帐
+## 9. 友人帐
 
 ### GET /api/friends — 列表
 
@@ -435,7 +455,7 @@ query: `?page=1&page_size=20&status=approved`
 
 ---
 
-## 9. 链接收藏
+## 10. 链接收藏
 
 ### GET /api/links — 列表
 
@@ -488,7 +508,7 @@ query: `?page=1&page_size=20&tag=rust&favorite=1`
 
 ---
 
-## 10. 相册
+## 11. 相册
 
 ### GET /api/galleries — 列表
 
@@ -557,7 +577,7 @@ query: `?page=1&page_size=20&tag=rust&favorite=1`
 
 ---
 
-## 11. 法律文档
+## 12. 法律文档
 
 ### GET /api/license — 最新版本
 ### POST /api/license — 创建（需登录）
@@ -583,7 +603,7 @@ query: `?page=1&page_size=20&tag=rust&favorite=1`
 
 ---
 
-## 12. 番剧记录
+## 13. 番剧记录
 
 ### GET /api/bangumi/records
 
@@ -623,7 +643,7 @@ query: `?page=1&page_size=20&tag=rust&favorite=1`
 
 ---
 
-## 13. 外部 API 代理
+## 14. 外部 API 代理
 
 所有代理接口将上游响应原样返回，通过 KV 缓存减少调用。
 
@@ -652,7 +672,7 @@ query: `?page=1&page_size=20&tag=rust&favorite=1`
 
 ---
 
-## 14. 垃圾桶
+## 15. 垃圾桶
 
 所有接口需登录。
 

@@ -370,6 +370,14 @@ pub async fn dashboard(
     }))
 }
 
+/// GET /api/health — 健康检查
+#[worker::send]
+pub async fn health_check(
+    State(env): State<Arc<Env>>,
+) -> AppResult<Json<HealthOverview>> {
+    Ok(Json(gather_health_checks(&env).await))
+}
+
 fn s_to_period(s: UmamiStatsResponse) -> PeriodStats {
     PeriodStats {
         pageviews: s.pageviews.value,

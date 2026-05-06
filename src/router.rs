@@ -11,6 +11,7 @@ pub fn api_router(state: Arc<Env>) -> Router {
     Router::new()
         // 公共统计
         .route("/api/stats", get(dashboard::public_stats))
+        .route("/api/health", get(dashboard::health_check))
         // 身份验证
         .route("/api/auth/register", post(auth::register))
         .route("/api/auth/login", post(auth::login))
