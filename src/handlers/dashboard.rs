@@ -17,6 +17,8 @@ use crate::time;
 /// 站点级启动时间戳，持久化在 Core 数据库 site_config 表中，跨 Worker 实例共享
 /// 记录了站点首次部署的时间，Worker 重启不影响此值
 static SITE_STARTED_AT: OnceLock<u64> = OnceLock::new();
+/// 当前 Worker 实例启动时间戳，重启后重置
+static INSTANCE_STARTED_AT: OnceLock<u64> = OnceLock::new();
 
 // ═══════════════════════════════════════════════════════════════
 //  公共统计（无需认证）
@@ -209,6 +211,7 @@ pub struct DatabaseCheck {
 pub struct HealthSummary {
     pub status: String,
     pub version: &'static str,
+    pub instance_started_at_epoch: u64,
     pub kv: CheckResult,
 }
 
@@ -238,6 +241,7 @@ impl CheckResult {
 #[derive(Serialize)]
 pub struct HealthOverview {
     pub status: String,
+    pub instance_started_at_epoch: u64,
     pub checks: HealthChecks,
 }
 
@@ -471,9 +475,13 @@ async fn insert_site_started_at(db: &worker::D1Database, key: &str, epoch: u64) 
 }
 
 async fn gather_health(_env: &Arc<Env>) -> HealthSummary {
+    let now = time::now_epoch();
+    let instance_started_at = INSTANCE_STARTED_AT.get_or_init(|| now);
+
     HealthSummary {
         status: "ok".into(),
         version: env!("CARGO_PKG_VERSION"),
+        instance_started_at_epoch: *instance_started_at,
         kv: CheckResult {
             status: "ok".into(),
             latency_ms: None,
@@ -521,6 +529,9 @@ async fn gather_health_checks(env: &Arc<Env>) -> HealthOverview {
         },
     );
 
+    let now = time::now_epoch();
+    let instance_started_at = INSTANCE_STARTED_AT.get_or_init(|| now);
+
     let status = if d1.status == "ok" && kv.status == "ok" {
         "ok"
     } else {
@@ -529,6 +540,7 @@ async fn gather_health_checks(env: &Arc<Env>) -> HealthOverview {
 
     HealthOverview {
         status: status.into(),
+        instance_started_at_epoch: *instance_started_at,
         checks: HealthChecks { d1, kv },
     }
 }

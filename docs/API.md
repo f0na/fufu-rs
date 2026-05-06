@@ -185,6 +185,7 @@
   "health": {
     "status": "ok",
     "version": "0.1.0",
+    "instance_started_at_epoch": 1778012246,
     "kv": { "status": "ok" }
   },
   "stats": {
