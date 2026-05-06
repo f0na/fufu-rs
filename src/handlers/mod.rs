@@ -3,7 +3,6 @@ pub mod bangumi;
 pub mod dashboard;
 pub mod friend;
 pub mod gallery;
-pub mod health;
 pub mod legal;
 pub mod like;
 pub mod link;

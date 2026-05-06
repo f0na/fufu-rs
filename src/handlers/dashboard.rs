@@ -14,8 +14,12 @@ use crate::handlers::umami::{UmamiClient, UmamiMetricItem, UmamiPageviewsRespons
 use crate::kv::KvCache;
 use crate::time;
 
-/// 站点启动时间缓存（首次从 KV 读取后缓存在内存中）
+/// 站点级启动时间戳，持久化在 Core 数据库 site_config 表中，跨 Worker 实例共享
+/// 记录了站点首次部署的时间，Worker 重启不影响此值
 static SITE_STARTED_AT: OnceLock<u64> = OnceLock::new();
+/// 进程级启动时间戳，仅存在于当前 Worker 实例内存中，重启后重置
+/// 用于健康检查 uptime，反映当前 Worker 实例的运行时长
+static START_TIME: OnceLock<u64> = OnceLock::new();
 
 // ═══════════════════════════════════════════════════════════════
 //  公共统计（无需认证）
@@ -23,6 +27,7 @@ static SITE_STARTED_AT: OnceLock<u64> = OnceLock::new();
 
 #[derive(Serialize)]
 pub struct PublicStats {
+    pub health: HealthOverview,
     pub active_visitors: i64,
     pub today: PeriodStats,
     pub last_30_days: PeriodStats,
@@ -55,12 +60,16 @@ pub async fn public_stats(
     let now_ms = timestamp_ms(now.naive_utc());
     let day_unit = "day";
 
-    let deploy_info = gather_deploy_info(&env).await;
+    let (deploy_info, health) = futures::join!(
+        gather_deploy_info(&env),
+        gather_health_checks(&env),
+    );
 
     let umami = match UmamiClient::new(&env).await {
         Ok(c) => c,
         Err(_) => {
             return Ok(Json(PublicStats {
+                health,
                 active_visitors: 0,
                 today: PeriodStats { pageviews: 0, visitors: 0, visits: 0 },
                 last_30_days: PeriodStats { pageviews: 0, visitors: 0, visits: 0 },
@@ -124,6 +133,7 @@ pub async fn public_stats(
     };
 
     Ok(Json(PublicStats {
+        health,
         active_visitors,
         today,
         last_30_days,
@@ -180,6 +190,8 @@ pub struct MetricItem {
 pub struct DeployInfo {
     pub deployed_at: String,
     pub deployed_at_epoch: u64,
+    /// 站点级总运行时长（秒），从首次部署至今，持久化不因 Worker 重启重置
+    /// 当前 Worker 实例运行时长见 health.uptime
     pub uptime_seconds: u64,
     pub uptime_human: String,
 }
@@ -214,6 +226,37 @@ pub struct CheckResult {
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub latency_ms: Option<u64>,
+}
+
+impl CheckResult {
+    fn ok(latency_ms: u64) -> Self {
+        Self {
+            status: "ok".into(),
+            latency_ms: Some(latency_ms),
+        }
+    }
+
+    fn degraded(msg: &str) -> Self {
+        Self {
+            status: format!("degraded: {}", msg),
+            latency_ms: None,
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct HealthOverview {
+    pub status: String,
+    /// 当前 Worker 实例的运行时长（秒），重启后归零
+    /// 站点级总运行时长见 deploy_info.uptime_seconds
+    pub uptime: u64,
+    pub checks: HealthChecks,
+}
+
+#[derive(Serialize)]
+pub struct HealthChecks {
+    pub d1: CheckResult,
+    pub kv: CheckResult,
 }
 
 #[derive(Serialize)]
@@ -390,21 +433,53 @@ async fn get_started_at(env: &Arc<Env>) -> u64 {
         return ts;
     }
 
-    let kv = match KvCache::new(env) {
-        Ok(k) => k,
-        Err(_) => return time::now_epoch(),
+    let now = time::now_epoch();
+    let db = match get_db(env, Db::Core) {
+        Ok(d) => d,
+        Err(_) => return now,
     };
-    let key = "__site_started_at";
-    let ts = if let Some(val) = kv.get_str(key).await.unwrap_or(None) {
-        val.parse::<u64>().unwrap_or_else(|_| time::now_epoch())
-    } else {
-        let ts = time::now_epoch();
-        let _ = kv.put_str(key, &ts.to_string(), 0).await;
-        ts
+
+    let key = "site_started_at";
+    let result = match db
+        .prepare("SELECT value FROM site_config WHERE key = ?")
+        .bind(&[key.into()])
+    {
+        Ok(stmt) => stmt.all().await.ok(),
+        Err(_) => None,
+    };
+
+    let ts = match result {
+        Some(r) => {
+            let rows: Vec<serde_json::Value> = r.results().unwrap_or_default();
+            match rows.first().and_then(|r| r.get("value")).and_then(|v| v.as_str()) {
+                Some(v) => v.parse::<u64>().unwrap_or(now),
+                None => {
+                    let _ = insert_site_started_at(&db, key, now).await;
+                    now
+                }
+            }
+        }
+        None => {
+            let _ = insert_site_started_at(&db, key, now).await;
+            now
+        }
     };
 
     let _ = SITE_STARTED_AT.set(ts);
     ts
+}
+
+async fn insert_site_started_at(db: &worker::D1Database, key: &str, epoch: u64) -> Result<(), ()> {
+    let now_iso = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+    match db.prepare("INSERT INTO site_config (key, value, created_at, updated_at) VALUES (?, ?, ?, ?)")
+        .bind(&[key.into(), epoch.to_string().into(), now_iso.clone().into(), now_iso.into()])
+    {
+        Ok(stmt) => match stmt.run().await {
+            Ok(_) => Ok(()),
+            Err(_) => Err(()),
+        },
+        Err(_) => Err(()),
+    }
 }
 
 async fn gather_health(env: &Arc<Env>) -> HealthSummary {
@@ -433,6 +508,56 @@ async fn gather_deploy_info(env: &Arc<Env>) -> DeployInfo {
         deployed_at_epoch: started_at,
         uptime_seconds: uptime_secs,
         uptime_human: format_uptime(uptime_secs),
+    }
+}
+
+// ─── 健康检查（合并自原 /api/health）─────────────────────────
+
+async fn check_d1(env: &Arc<Env>) -> AppResult<u64> {
+    let start = chrono::Utc::now().timestamp_millis();
+    let db = get_db(env, Db::Core)?;
+    db.prepare("SELECT 1").run().await?;
+    let elapsed = (chrono::Utc::now().timestamp_millis() - start) as u64;
+    Ok(elapsed)
+}
+
+async fn check_kv(env: &Arc<Env>) -> AppResult<u64> {
+    let start = chrono::Utc::now().timestamp_millis();
+    let cache = KvCache::new(env)?;
+    cache.get_str("__health_check").await?;
+    let elapsed = (chrono::Utc::now().timestamp_millis() - start) as u64;
+    Ok(elapsed)
+}
+
+async fn gather_health_checks(env: &Arc<Env>) -> HealthOverview {
+    let now = chrono::Utc::now().timestamp() as u64;
+    let uptime = now - START_TIME.get_or_init(|| now);
+
+    let (d1, kv) = futures::join!(
+        async {
+            match check_d1(env).await {
+                Ok(ms) => CheckResult::ok(ms),
+                Err(e) => CheckResult::degraded(&e.to_string()),
+            }
+        },
+        async {
+            match check_kv(env).await {
+                Ok(ms) => CheckResult::ok(ms),
+                Err(e) => CheckResult::degraded(&e.to_string()),
+            }
+        },
+    );
+
+    let status = if d1.status == "ok" && kv.status == "ok" {
+        "ok"
+    } else {
+        "degraded"
+    };
+
+    HealthOverview {
+        status: status.into(),
+        uptime,
+        checks: HealthChecks { d1, kv },
     }
 }
 
