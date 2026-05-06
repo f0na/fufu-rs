@@ -17,9 +17,6 @@ use crate::time;
 /// 站点级启动时间戳，持久化在 Core 数据库 site_config 表中，跨 Worker 实例共享
 /// 记录了站点首次部署的时间，Worker 重启不影响此值
 static SITE_STARTED_AT: OnceLock<u64> = OnceLock::new();
-/// 进程级启动时间戳，仅存在于当前 Worker 实例内存中，重启后重置
-/// 用于健康检查 uptime，反映当前 Worker 实例的运行时长
-static START_TIME: OnceLock<u64> = OnceLock::new();
 
 // ═══════════════════════════════════════════════════════════════
 //  公共统计（无需认证）
@@ -211,7 +208,6 @@ pub struct DatabaseCheck {
 #[derive(Serialize)]
 pub struct HealthSummary {
     pub status: String,
-    pub uptime: u64,
     pub version: &'static str,
     pub kv: CheckResult,
 }
@@ -242,9 +238,6 @@ impl CheckResult {
 #[derive(Serialize)]
 pub struct HealthOverview {
     pub status: String,
-    /// 当前 Worker 实例的运行时长（秒），重启后归零
-    /// 站点级总运行时长见 deploy_info.uptime_seconds
-    pub uptime: u64,
     pub checks: HealthChecks,
 }
 
@@ -477,14 +470,9 @@ async fn insert_site_started_at(db: &worker::D1Database, key: &str, epoch: u64) 
     }
 }
 
-async fn gather_health(env: &Arc<Env>) -> HealthSummary {
-    let started_at = get_started_at(env).await;
-    let now = time::now_epoch();
-    let uptime_secs = now.saturating_sub(started_at);
-
+async fn gather_health(_env: &Arc<Env>) -> HealthSummary {
     HealthSummary {
         status: "ok".into(),
-        uptime: uptime_secs,
         version: env!("CARGO_PKG_VERSION"),
         kv: CheckResult {
             status: "ok".into(),
@@ -518,9 +506,6 @@ async fn check_kv(env: &Arc<Env>) -> AppResult<u64> {
 }
 
 async fn gather_health_checks(env: &Arc<Env>) -> HealthOverview {
-    let now = chrono::Utc::now().timestamp() as u64;
-    let uptime = now - START_TIME.get_or_init(|| now);
-
     let (d1, kv) = futures::join!(
         async {
             match check_d1(env).await {
@@ -544,7 +529,6 @@ async fn gather_health_checks(env: &Arc<Env>) -> HealthOverview {
 
     HealthOverview {
         status: status.into(),
-        uptime,
         checks: HealthChecks { d1, kv },
     }
 }

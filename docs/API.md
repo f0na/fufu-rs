@@ -39,29 +39,15 @@
 
 ---
 
-## 1. 公共统计（含系统健康检查）
+## 1. 公共统计
 
 ### GET /api/stats
 
 认证：无。Umami 不可用时返回全零。
 
-**uptime 字段说明：**
-
-| 字段 | 级别 | 含义 |
-|------|------|------|
-| `health.uptime` | 进程级 | 当前 Worker 实例运行时长，重启后归零 |
-
 ```json
 // 200
 {
-  "health": {
-    "status": "ok",
-    "uptime": 3600,
-    "checks": {
-      "d1": { "status": "ok", "latency_ms": 12 },
-      "kv": { "status": "ok", "latency_ms": 8 }
-    }
-  },
   "active_visitors": 5,
   "today": { "pageviews": 120, "visitors": 45, "visits": 60 },
   "last_30_days": { "pageviews": 5000, "visitors": 2000, "visits": 2500 },
@@ -198,7 +184,6 @@
   },
   "health": {
     "status": "ok",
-    "uptime": 86400,
     "version": "0.1.0",
     "kv": { "status": "ok" }
   },
